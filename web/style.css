@@ -262,8 +262,8 @@ mark { background: rgba(255, 179, 0, .4); color: inherit; border-radius: 2px; }
   background: transparent; box-shadow: none; border-radius: 0;
 }
 .report-head .notes-input { padding-bottom: 8px; }
-.report-head .photos, .report-head .audios, .report-head .item-tools { margin: 0 12px 10px; }
-.report-head .item-tools { margin-bottom: 0; }
+.report-head .photos, .report-head .audios { margin: 0 12px 10px; }
+.report-head .audios:last-child, .report-head .photos:last-child { margin-bottom: 0; }
 .report-head.recording-target { outline: 2px solid var(--danger); }
 .item-tools .tool-btn { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .section-title { cursor: pointer; user-select: none; }

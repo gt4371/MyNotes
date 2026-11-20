@@ -22,12 +22,11 @@ Adresse: **https://gt4371.github.io/MyNotes/**
 3. Fertig – ab jetzt startet „Berichte“ wie eine App, auch ohne Internet.
 
 **Aufbau eines Berichts**
-- **Titel**, **Datum** (vorbelegt mit heute), **Ort** und **Notizen** zum ganzen Bericht –
-  auch die Notizen können direkt **Fotos** und **Sprachnotizen** haben
+- **Titel**, **Datum** (vorbelegt mit heute), **Ort** und **Notizen** zum ganzen Bericht
 - beliebig viele **Unterpunkte**, jeweils mit Überschrift, **Text**, Fotos und **🎤 Sprachnotizen**
 - **📷 Foto** öffnet direkt die Kamera, **🖼 Galerie** wählt vorhandene Bilder (mehrere auf einmal); über ⋮ am Unterpunkt nach oben/unten verschieben oder löschen
 - Unterpunkte mit ▾/▸ **ein- und ausklappen** (eingeklappt: Kurzinfo mit 📷/🎤 und Textanfang, antippen öffnet);
-  Tippen auf die Überschrift **„Unterpunkte“** klappt alle ein (nochmal: alle aus), ebenso im Bericht-Menü ⋮;
+  Tippen auf die Überschrift **„Unterpunkte“** klappt alle ein (nochmal: alle aus);
   der Zustand bleibt auf dem Gerät gespeichert
 - gespeichert wird automatisch; Fotos werden auf max. 1920 Pixel verkleinert
 - Foto antippen = Vollbild mit Teilen, Speichern, Löschen; Aufnahme mit „Fertig“ beenden oder „Verwerfen“ (max. 15 Min.)

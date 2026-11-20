@@ -7,7 +7,7 @@
    Die Foto-/Audiodaten selbst liegen getrennt im Store "files" (Schlüssel = Anhang-id).
    ====================================================================== */
 
-const APP_VERSION = '1.7 (20.11.2026)';
+const APP_VERSION = '1.8 (20.11.2026)';
 const DB_NAME = 'notizen';
 let dbPromise = null;
 
@@ -1156,9 +1156,6 @@ const actions = {
       });
     }
   },
-
-  'collapse-all'() { setFoldAll(true); },
-  'expand-all'() { setFoldAll(false); },
 
   'item-up'() { moveItem(menuItemId, -1); },
   'item-down'() { moveItem(menuItemId, 1); },
