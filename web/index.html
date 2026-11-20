@@ -37,9 +37,35 @@
     <div class="editor">
       <input id="title" class="title-input" placeholder="Titel" autocomplete="off" enterkeyhint="next">
       <p id="date" class="date"></p>
+      <div id="photos" class="photos" hidden></div>
+      <div id="audios" class="audios" hidden></div>
       <textarea id="content" placeholder="Notiz schreiben …"></textarea>
     </div>
+    <footer class="toolbar">
+      <div id="tools" class="tools">
+        <button id="photo-btn" class="tool-btn" type="button"><span aria-hidden="true">📷</span> Foto</button>
+        <button id="record-btn" class="tool-btn" type="button"><span aria-hidden="true">🎤</span> Sprachnotiz</button>
+      </div>
+      <div id="recording" class="recording" hidden>
+        <span class="rec-dot" aria-hidden="true"></span>
+        <span id="rec-time">0:00</span>
+        <button id="rec-cancel" class="tool-btn" type="button">Verwerfen</button>
+        <button id="rec-stop" class="tool-btn primary" type="button">■ Fertig</button>
+      </div>
+    </footer>
   </section>
+
+  <!-- Foto-Ansicht -->
+  <div id="viewer" class="viewer" hidden>
+    <img id="viewer-img" alt="">
+    <div class="viewer-bar">
+      <button id="viewer-close" class="icon-btn" aria-label="Schließen">✕</button>
+      <span class="spacer"></span>
+      <button id="viewer-share" class="icon-btn" aria-label="Teilen" title="Teilen">⇪</button>
+      <button id="viewer-save" class="icon-btn" aria-label="Speichern" title="Als Datei speichern">⤓</button>
+      <button id="viewer-delete" class="icon-btn" aria-label="Foto löschen" title="Löschen">🗑</button>
+    </div>
+  </div>
 
   <!-- Menüs -->
   <div id="main-menu" class="menu" hidden role="menu">
@@ -53,6 +79,7 @@
     <button data-action="delete" role="menuitem" class="danger">Löschen</button>
   </div>
 
+  <input id="photo-file" type="file" accept="image/*" multiple hidden>
   <input id="import-file" type="file" accept=".json,.txt,application/json,text/plain" multiple hidden>
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 

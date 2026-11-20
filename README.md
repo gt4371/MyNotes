@@ -7,6 +7,7 @@ Einfache Notizen-App in zwei Varianten:
 | Installation | Im Browser öffnen, „Zum Startbildschirm hinzufügen“ | APK installieren |
 | Offline | ✅ nach dem ersten Öffnen | ✅ |
 | Speicherort | Browser-Speicher (IndexedDB) auf dem Gerät | App-Speicher (`notes.json`) |
+| Fotos & Sprachnotizen pro Notiz | ✅ | – |
 | Export/Import als Datei | ✅ | – |
 
 Beide: Notizen mit Titel und Text, **automatisches Speichern**, Suche, Teilen, Löschen;
@@ -20,9 +21,14 @@ Adresse: **https://gt4371.github.io/MyNotes/**
 2. Menü **⋮ → „Zum Startbildschirm hinzufügen“** bzw. **„App installieren“**.
 3. Fertig – ab jetzt startet „Notizen“ wie eine App, auch ohne Internet.
 
+**Fotos und Sprachnotizen:** In jeder Notiz unten **📷 Foto** (Kamera oder Galerie, mehrere auf einmal) und
+**🎤 Sprachnotiz** (Aufnahme mit „Fertig“ beenden oder „Verwerfen“, max. 15 Minuten).
+Fotos werden auf max. 1920 Pixel verkleinert, um Speicher zu sparen. Foto antippen = Vollbild mit Teilen,
+Speichern und Löschen. Beim ersten Aufnehmen fragt der Browser nach der Mikrofon-Erlaubnis.
+
 **Dateien:** Im Menü ⋮ der Liste gibt es
-- **Sicherung exportieren** – alle Notizen als `notizen-sicherung-JJJJ-MM-TT.json` (Ordner „Downloads“),
-- **Alle als Textdatei exportieren** – lesbare `.txt`-Datei,
+- **Sicherung exportieren** – alle Notizen inkl. Fotos und Sprachnotizen als `notizen-sicherung-JJJJ-MM-TT.json` (Ordner „Downloads“),
+- **Alle als Textdatei exportieren** – lesbare `.txt`-Datei (nur Text),
 - **Importieren** – eine Sicherung zurückladen (bereits vorhandene, neuere Notizen bleiben unverändert) oder `.txt`-Dateien als neue Notizen.
 
 In einer Notiz speichert **⋮ → Als Textdatei speichern** diese eine Notiz als `.txt`.

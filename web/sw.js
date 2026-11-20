@@ -1,6 +1,6 @@
 // Offline-Unterstützung: App-Dateien werden zwischengespeichert.
 // Bei Änderungen an den Dateien VERSION erhöhen, damit alle Geräte die neue Fassung laden.
-const VERSION = 'notizen-v1';
+const VERSION = 'notizen-v2';
 const FILES = [
   './',
   'index.html',
