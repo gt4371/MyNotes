@@ -2,6 +2,9 @@ name: Android Notizen-App bauen
 
 on:
   push:
+    paths-ignore:
+      - "web/**"
+      - ".github/workflows/pages.yml"
   workflow_dispatch:
 
 jobs:

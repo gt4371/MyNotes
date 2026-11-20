@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Notizen</title>
+  <meta name="description" content="Einfache Notizen – offline, alles bleibt auf dem Gerät.">
+  <meta name="theme-color" content="#3949ab">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Liste -->
+  <section id="list-view" class="view">
+    <header class="bar">
+      <h1>Notizen</h1>
+      <button id="menu-btn" class="icon-btn" aria-label="Menü" aria-haspopup="true">⋮</button>
+    </header>
+    <div class="search-wrap">
+      <input id="search" type="search" placeholder="Notizen durchsuchen" autocomplete="off">
+    </div>
+    <ul id="notes" class="notes"></ul>
+    <p id="empty" class="empty" hidden></p>
+    <button id="add-btn" class="fab" aria-label="Neue Notiz">+</button>
+  </section>
+
+  <!-- Bearbeiten -->
+  <section id="edit-view" class="view" hidden>
+    <header class="bar">
+      <button id="back-btn" class="icon-btn" aria-label="Zurück">←</button>
+      <h1 id="edit-heading">Notiz</h1>
+      <button id="share-btn" class="icon-btn" aria-label="Teilen" title="Teilen">⇪</button>
+      <button id="note-menu-btn" class="icon-btn" aria-label="Weitere Aktionen" aria-haspopup="true">⋮</button>
+    </header>
+    <div class="editor">
+      <input id="title" class="title-input" placeholder="Titel" autocomplete="off" enterkeyhint="next">
+      <p id="date" class="date"></p>
+      <textarea id="content" placeholder="Notiz schreiben …"></textarea>
+    </div>
+  </section>
+
+  <!-- Menüs -->
+  <div id="main-menu" class="menu" hidden role="menu">
+    <button data-action="export-all" role="menuitem">Sicherung exportieren (alle Notizen)</button>
+    <button data-action="export-all-txt" role="menuitem">Alle als Textdatei exportieren</button>
+    <button data-action="import" role="menuitem">Importieren (Sicherung oder .txt)</button>
+    <p id="backup-info" class="menu-info"></p>
+  </div>
+  <div id="note-menu" class="menu" hidden role="menu">
+    <button data-action="save-txt" role="menuitem">Als Textdatei speichern</button>
+    <button data-action="delete" role="menuitem" class="danger">Löschen</button>
+  </div>
+
+  <input id="import-file" type="file" accept=".json,.txt,application/json,text/plain" multiple hidden>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
