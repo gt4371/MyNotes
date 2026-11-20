@@ -1,9 +1,10 @@
 'use strict';
 
 /* ======================================================================
-   Speicher (IndexedDB)
-   - Store "notes": Notizen inkl. Liste ihrer Anhänge (nur Metadaten)
-   - Store "files": die eigentlichen Foto-/Audiodaten (Blob), Schlüssel = Anhang-id
+   Datenmodell
+   Bericht: { id, title, date (JJJJ-MM-TT), notes, created, updated, items: [Unterpunkt] }
+   Unterpunkt: { id, title, text, attachments: [{ id, kind: 'photo'|'audio', type, created, duration? }] }
+   Die Foto-/Audiodaten selbst liegen getrennt im Store "files" (Schlüssel = Anhang-id).
    ====================================================================== */
 
 const DB_NAME = 'notizen';
@@ -12,11 +13,24 @@ let dbPromise = null;
 function openDb() {
   if (!dbPromise) {
     dbPromise = new Promise((resolve, reject) => {
-      const req = indexedDB.open(DB_NAME, 2);
-      req.onupgradeneeded = () => {
+      const req = indexedDB.open(DB_NAME, 3);
+      req.onupgradeneeded = e => {
         const db = req.result;
+        const tx = req.transaction;
         if (!db.objectStoreNames.contains('notes')) db.createObjectStore('notes', { keyPath: 'id' });
         if (!db.objectStoreNames.contains('files')) db.createObjectStore('files', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains('reports')) {
+          const reports = db.createObjectStore('reports', { keyPath: 'id' });
+          // Bisherige Notizen (Version 1/2) als Berichte übernehmen
+          if (e.oldVersion > 0) {
+            tx.objectStore('notes').openCursor().onsuccess = ev => {
+              const cur = ev.target.result;
+              if (!cur) return;
+              reports.put(noteToReport(cur.value));
+              cur.continue();
+            };
+          }
+        }
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
@@ -36,36 +50,70 @@ async function dbTx(stores, mode, fn) {
   });
 }
 
-const dbAllNotes = () => dbTx('notes', 'readonly', tx => tx.objectStore('notes').getAll());
-const dbPutNotes = list => dbTx('notes', 'readwrite', tx => list.forEach(n => tx.objectStore('notes').put(n)));
+const dbAllReports = () => dbTx('reports', 'readonly', tx => tx.objectStore('reports').getAll());
+const dbPutReports = list => dbTx('reports', 'readwrite', tx => list.forEach(r => tx.objectStore('reports').put(r)));
 const dbGetFile = id => dbTx('files', 'readonly', tx => tx.objectStore('files').get(id));
 const dbPutFiles = list => dbTx('files', 'readwrite', tx => list.forEach(f => tx.objectStore('files').put(f)));
 const dbDeleteFiles = ids => dbTx('files', 'readwrite', tx => ids.forEach(id => tx.objectStore('files').delete(id)));
-const dbDeleteNote = (id, fileIds) => dbTx(['notes', 'files'], 'readwrite', tx => {
-  tx.objectStore('notes').delete(id);
+const dbDeleteReport = (id, fileIds) => dbTx(['reports', 'files'], 'readwrite', tx => {
+  tx.objectStore('reports').delete(id);
   fileIds.forEach(f => tx.objectStore('files').delete(f));
 });
 
-/** Alle Notizen im Speicher, nach id. */
-const notes = new Map();
+/** Alle Berichte im Speicher, nach id. */
+const reports = new Map();
 
 function newId() {
   return (crypto.randomUUID && crypto.randomUUID()) ||
     Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
 }
 
-function normalize(n) {
+function isoDate(ms) {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function normalizeItem(i) {
   return {
-    id: String(n.id),
-    title: String(n.title || ''),
-    content: String(n.content || ''),
-    created: Number(n.created) || Date.now(),
-    updated: Number(n.updated) || Date.now(),
-    attachments: Array.isArray(n.attachments) ? n.attachments.map(a => ({ ...a })) : [],
+    id: String(i.id || newId()),
+    title: String(i.title || ''),
+    text: String(i.text || ''),
+    attachments: Array.isArray(i.attachments)
+      ? i.attachments.filter(a => a && a.id && (a.kind === 'photo' || a.kind === 'audio')).map(a => ({ ...a, id: String(a.id) }))
+      : [],
   };
 }
 
-const clone = n => normalize(n);
+function normalize(r) {
+  const created = Number(r.created) || Date.now();
+  return {
+    id: String(r.id || newId()),
+    title: String(r.title || ''),
+    date: /^\d{4}-\d{2}-\d{2}$/.test(r.date || '') ? r.date : isoDate(created),
+    notes: String(r.notes || ''),
+    created,
+    updated: Number(r.updated) || created,
+    items: Array.isArray(r.items) ? r.items.map(normalizeItem) : [],
+  };
+}
+
+/** Alte Notiz (Version 1/2) → Bericht mit einem Unterpunkt */
+function noteToReport(n) {
+  const created = Number(n.created) || Date.now();
+  return normalize({
+    id: n.id,
+    title: n.title || '',
+    date: isoDate(created),
+    notes: '',
+    created,
+    updated: n.updated,
+    items: [{ id: newId(), title: '', text: n.content || '', attachments: n.attachments || [] }],
+  });
+}
+
+const clone = r => normalize(JSON.parse(JSON.stringify(r)));
+const allAttachments = r => r.items.flatMap(i => i.attachments);
+const newItem = () => ({ id: newId(), title: '', text: '', attachments: [] });
 
 let persistRequested = false;
 function requestPersistence() {
@@ -75,11 +123,11 @@ function requestPersistence() {
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 }
 
-async function saveNote(note) {
-  note.updated = Date.now();
+async function saveReport(r) {
+  r.updated = Date.now();
   requestPersistence();
-  await dbPutNotes([note]);
-  notes.set(note.id, clone(note));
+  await dbPutReports([r]);
+  reports.set(r.id, clone(r));
 }
 
 /** Blob-URLs der Anhänge (für Vorschaubilder und Wiedergabe), nach Anhang-id */
@@ -106,8 +154,9 @@ const $ = sel => document.querySelector(sel);
 
 const timeFmt = new Intl.DateTimeFormat('de-DE', { hour: '2-digit', minute: '2-digit' });
 const dateFmt = new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+const longDateFmt = new Intl.DateTimeFormat('de-DE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
-function formatDate(ms) {
+function formatStamp(ms) {
   const d = new Date(ms);
   const today = new Date();
   const yesterday = new Date(today);
@@ -118,49 +167,30 @@ function formatDate(ms) {
   return dateFmt.format(d) + ', ' + timeFmt.format(d);
 }
 
+const parseIso = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+const formatDay = s => dateFmt.format(parseIso(s));
+const formatLongDay = s => longDateFmt.format(parseIso(s));
+
 function formatDuration(sec) {
   sec = Math.max(0, Math.round(sec || 0));
   return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
 }
 
-const countOf = (note, kind) => note.attachments.filter(a => a.kind === kind).length;
+const countOf = (r, kind) => allAttachments(r).filter(a => a.kind === kind).length;
 
-function displayTitle(note) {
-  const title = note.title.trim();
-  if (title) return title;
-  const first = note.content.trim().split('\n')[0].trim();
-  if (first) return first;
-  if (countOf(note, 'photo')) return 'Foto-Notiz';
-  if (countOf(note, 'audio')) return 'Sprachnotiz';
-  return '(ohne Titel)';
+function displayTitle(r) {
+  const t = r.title.trim();
+  if (t) return t;
+  const first = r.items.map(i => i.title.trim() || i.text.trim().split('\n')[0].trim()).find(Boolean);
+  return first || 'Bericht ohne Titel';
 }
 
-function previewText(note) {
-  const content = note.content.trim();
-  const body = note.title.trim() ? content : content.split('\n').slice(1).join(' ');
-  return body.replace(/\s+/g, ' ').trim();
-}
-
-function badges(note) {
-  const p = countOf(note, 'photo');
-  const a = countOf(note, 'audio');
-  const parts = [];
-  if (p) parts.push(`📷 ${p}`);
-  if (a) parts.push(`🎤 ${a}`);
-  return parts.join('  ');
-}
-
-function attachmentSummary(note) {
-  const p = countOf(note, 'photo');
-  const a = countOf(note, 'audio');
-  const parts = [];
-  if (p) parts.push(p === 1 ? '1 Foto' : `${p} Fotos`);
-  if (a) parts.push(a === 1 ? '1 Sprachnotiz' : `${a} Sprachnotizen`);
-  return parts.join(', ');
+function itemLabel(item, index) {
+  return `${index + 1}. ${item.title.trim() || 'Unterpunkt'}`;
 }
 
 function escapeHtml(s) {
-  return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
 function highlight(text, query) {
@@ -170,17 +200,8 @@ function highlight(text, query) {
   return safe.replace(re, m => `<mark>${m}</mark>`);
 }
 
-function noteAsText(note) {
-  const extra = attachmentSummary(note);
-  return [note.title.trim(), note.content.trim(), extra && `[Anhänge: ${extra}]`].filter(Boolean).join('\n\n');
-}
-
 function safeFileName(name) {
-  return (name.replace(/[\\/:*?"<>|\n\r]+/g, ' ').trim().slice(0, 60) || 'Notiz');
-}
-
-function today() {
-  return new Date().toISOString().slice(0, 10);
+  return (name.replace(/[\\/:*?"<>|\n\r]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60) || 'Bericht');
 }
 
 function extFor(type) {
@@ -195,10 +216,13 @@ function extFor(type) {
   return 'bin';
 }
 
-function attachmentFileName(note, att, index) {
-  const base = safeFileName(displayTitle(note));
+function attachmentFileName(r, itemIndex, att, attIndex) {
   const label = att.kind === 'photo' ? 'Foto' : 'Sprachnotiz';
-  return `${base} - ${label} ${index + 1}.${extFor(att.type)}`;
+  return `${safeFileName(displayTitle(r))} - Punkt ${itemIndex + 1} ${label} ${attIndex + 1}.${extFor(att.type)}`;
+}
+
+function reportFileName(r) {
+  return `Bericht ${r.date} ${safeFileName(displayTitle(r))}.html`;
 }
 
 function downloadBlob(filename, blob) {
@@ -210,10 +234,6 @@ function downloadBlob(filename, blob) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 10000);
-}
-
-function download(filename, text, type) {
-  downloadBlob(filename, new Blob([text], { type: type + ';charset=utf-8' }));
 }
 
 const blobToDataUrl = blob => new Promise((resolve, reject) => {
@@ -240,35 +260,49 @@ function toast(message, actionLabel, action) {
   toastTimer = setTimeout(() => { el.hidden = true; }, actionLabel ? 6000 : 3000);
 }
 
+function autogrow(el) {
+  el.style.height = 'auto';
+  el.style.height = el.scrollHeight + 'px';
+}
+
 /* ======================================================================
    Liste
    ====================================================================== */
 
+function matches(r, q) {
+  if (!q) return true;
+  const hay = [r.title, r.notes, ...r.items.flatMap(i => [i.title, i.text])].join('\n').toLowerCase();
+  return hay.includes(q);
+}
+
 function renderList() {
   const query = $('#search').value.trim();
   const q = query.toLowerCase();
-  const list = [...notes.values()]
-    .filter(n => !q || n.title.toLowerCase().includes(q) || n.content.toLowerCase().includes(q))
-    .sort((a, b) => b.updated - a.updated);
+  const list = [...reports.values()]
+    .filter(r => matches(r, q))
+    .sort((a, b) => b.date.localeCompare(a.date) || b.updated - a.updated);
 
-  $('#notes').innerHTML = list.map(n => {
-    const preview = previewText(n);
-    const photo = n.attachments.find(a => a.kind === 'photo');
-    const b = badges(n);
-    return `<li class="note" data-id="${escapeHtml(n.id)}" tabindex="0">
+  $('#reports').innerHTML = list.map(r => {
+    const photo = allAttachments(r).find(a => a.kind === 'photo');
+    const p = countOf(r, 'photo');
+    const a = countOf(r, 'audio');
+    const n = r.items.length;
+    const meta = [n === 1 ? '1 Unterpunkt' : `${n} Unterpunkte`, p ? `📷 ${p}` : '', a ? `🎤 ${a}` : ''].filter(Boolean).join(' · ');
+    const preview = (r.notes.trim() || r.items.map(i => i.text.trim()).find(Boolean) || '').replace(/\s+/g, ' ');
+    return `<li class="note" data-id="${escapeHtml(r.id)}" tabindex="0">
       <div class="note-row">
         <div>
-          <h2>${highlight(displayTitle(n), query)}</h2>
+          <h2>${highlight(displayTitle(r), query)}</h2>
+          <time>${formatDay(r.date)}</time>
           ${preview ? `<p>${highlight(preview.slice(0, 300), query)}</p>` : ''}
-          <time>${formatDate(n.updated)}</time>
-          ${b ? `<span class="badges">${b}</span>` : ''}
+          <span class="badges">${meta}</span>
         </div>
         ${photo ? `<img class="note-thumb" data-file="${escapeHtml(photo.id)}" alt="">` : ''}
       </div>
     </li>`;
   }).join('');
 
-  document.querySelectorAll('#notes img[data-file]').forEach(async img => {
+  document.querySelectorAll('#reports img[data-file]').forEach(async img => {
     const url = await fileUrl(img.dataset.file).catch(() => null);
     if (url) img.src = url;
   });
@@ -277,77 +311,116 @@ function renderList() {
   empty.hidden = list.length > 0;
   empty.textContent = query
     ? 'Keine Treffer.'
-    : 'Noch keine Notizen.\nTippe auf „+“, um eine anzulegen.';
+    : 'Noch keine Berichte.\nTippe auf „+“, um einen anzulegen.';
 }
 
-$('#notes').addEventListener('click', e => {
+$('#reports').addEventListener('click', e => {
   const li = e.target.closest('.note');
-  if (li) openNote(li.dataset.id);
+  if (li) openReport(li.dataset.id);
 });
-$('#notes').addEventListener('keydown', e => {
+$('#reports').addEventListener('keydown', e => {
   const li = e.target.closest('.note');
-  if (li && e.key === 'Enter') openNote(li.dataset.id);
+  if (li && e.key === 'Enter') openReport(li.dataset.id);
 });
 $('#search').addEventListener('input', renderList);
-$('#add-btn').addEventListener('click', () => openNote(null));
+$('#add-btn').addEventListener('click', () => openReport(null));
 
 /* ======================================================================
-   Bearbeiten
+   Bericht bearbeiten
    ====================================================================== */
 
-let current = null;      // Notiz, die gerade bearbeitet wird (Arbeitskopie)
+let current = null;      // Bericht, der gerade bearbeitet wird (Arbeitskopie)
 let saveTimer = null;
 let saving = Promise.resolve();
 
-function openNote(id) {
-  location.hash = id ? '#/n/' + encodeURIComponent(id) : '#/neu';
+function openReport(id) {
+  location.hash = id ? '#/b/' + encodeURIComponent(id) : '#/neu';
 }
 
 function showEditor(id) {
-  const existing = id && notes.get(id);
+  const existing = id && reports.get(id);
   current = existing
     ? clone(existing)
-    : normalize({ id: newId(), title: '', content: '', created: Date.now(), updated: Date.now() });
+    : normalize({ id: newId(), date: isoDate(Date.now()), items: [newItem()] });
 
-  $('#title').value = current.title;
-  $('#content').value = current.content;
-  $('#edit-heading').textContent = existing ? 'Notiz' : 'Neue Notiz';
-  updateDateLine();
-  renderAttachments();
+  $('#r-title').value = current.title;
+  $('#r-date').value = current.date;
+  $('#r-notes').value = current.notes;
+  $('#edit-heading').textContent = existing ? 'Bericht' : 'Neuer Bericht';
+  updateStamp();
+  renderItems();
 
   $('#list-view').hidden = true;
   $('#edit-view').hidden = false;
   window.scrollTo(0, 0);
-  if (!existing) $('#content').focus();
+  autogrow($('#r-notes'));
+  if (!existing) $('#r-title').focus();
 }
 
-function updateDateLine() {
-  $('#date').textContent = notes.has(current.id) ? 'Zuletzt geändert: ' + formatDate(current.updated) : '';
+function updateStamp() {
+  $('#r-updated').textContent = reports.has(current.id) ? 'Zuletzt geändert: ' + formatStamp(current.updated) : '';
 }
 
-function renderAttachments() {
-  const photos = current.attachments.filter(a => a.kind === 'photo');
-  const audios = current.attachments.filter(a => a.kind === 'audio');
+const findItem = id => current.items.find(i => i.id === id);
+const itemEl = id => document.querySelector(`.item[data-id="${CSS.escape(id)}"]`);
 
-  const photoBox = $('#photos');
+function renderItems() {
+  $('#items').innerHTML = current.items.map((item, idx) => `
+    <section class="item" data-id="${escapeHtml(item.id)}">
+      <div class="item-head">
+        <span class="num">${idx + 1}</span>
+        <input class="item-title" placeholder="Unterpunkt ${idx + 1}" autocomplete="off" enterkeyhint="next">
+        <button type="button" class="item-menu-btn" aria-label="Aktionen für Unterpunkt ${idx + 1}">⋮</button>
+      </div>
+      <textarea class="item-text autogrow" rows="2" placeholder="Text …"></textarea>
+      <div class="photos" hidden></div>
+      <div class="audios" hidden></div>
+      <div class="item-tools">
+        <button type="button" class="tool-btn" data-act="photo"><span aria-hidden="true">📷</span> Foto</button>
+        <button type="button" class="tool-btn" data-act="record"><span aria-hidden="true">🎤</span> Sprachnotiz</button>
+      </div>
+    </section>`).join('');
+
+  current.items.forEach(item => {
+    const el = itemEl(item.id);
+    el.querySelector('.item-title').value = item.title;
+    const ta = el.querySelector('.item-text');
+    ta.value = item.text;
+    renderAttachments(item.id);
+    requestAnimationFrame(() => autogrow(ta));
+  });
+  if (recorder && recTarget) {
+    const el = itemEl(recTarget);
+    if (el) el.classList.add('recording-target');
+  }
+}
+
+function renderAttachments(itemId) {
+  const item = findItem(itemId);
+  const el = itemEl(itemId);
+  if (!item || !el) return;
+  const photos = item.attachments.filter(a => a.kind === 'photo');
+  const audios = item.attachments.filter(a => a.kind === 'audio');
+
+  const photoBox = el.querySelector('.photos');
   photoBox.hidden = photos.length === 0;
   photoBox.innerHTML = photos.map(a =>
-    `<button type="button" data-id="${escapeHtml(a.id)}" aria-label="Foto öffnen"><img alt=""></button>`).join('');
+    `<button type="button" data-file="${escapeHtml(a.id)}" aria-label="Foto öffnen"><img alt=""></button>`).join('');
   photoBox.querySelectorAll('button').forEach(async btn => {
-    const url = await fileUrl(btn.dataset.id).catch(() => null);
+    const url = await fileUrl(btn.dataset.file).catch(() => null);
     if (url) btn.querySelector('img').src = url;
   });
 
-  const audioBox = $('#audios');
+  const audioBox = el.querySelector('.audios');
   audioBox.hidden = audios.length === 0;
   audioBox.innerHTML = audios.map(a =>
-    `<div class="audio" data-id="${escapeHtml(a.id)}">
+    `<div class="audio" data-file="${escapeHtml(a.id)}">
       <audio controls preload="metadata"></audio>
       ${a.duration ? `<span class="len">${formatDuration(a.duration)}</span>` : ''}
       <button type="button" class="del" aria-label="Sprachnotiz löschen" title="Löschen">🗑</button>
     </div>`).join('');
   audioBox.querySelectorAll('.audio').forEach(async row => {
-    const url = await fileUrl(row.dataset.id).catch(() => null);
+    const url = await fileUrl(row.dataset.file).catch(() => null);
     if (url) fixDuration(row.querySelector('audio')).src = url;
   });
 }
@@ -365,9 +438,12 @@ function fixDuration(audio) {
   return audio;
 }
 
-const isEmpty = (title, content, note) => !title.trim() && !content.trim() && note.attachments.length === 0;
+function isEmptyReport(r) {
+  return !r.title.trim() && !r.notes.trim() &&
+    r.items.every(i => !i.title.trim() && !i.text.trim() && i.attachments.length === 0);
+}
 
-/** Speichert die Arbeitskopie, wenn sich etwas geändert hat (force = Anhänge geändert). */
+/** Speichert die Arbeitskopie (force = auch ohne Textänderung, z. B. nach Anhängen/Umsortieren). */
 function flushSave(force = false) {
   clearTimeout(saveTimer);
   saveTimer = null;
@@ -375,93 +451,148 @@ function flushSave(force = false) {
   return saving;
 }
 
+let dirty = false;
+
 async function doSave(force) {
   if (!current) return;
-  const title = $('#title').value;
-  const content = $('#content').value;
-  const stored = notes.get(current.id);
-
-  if (!stored && isEmpty(title, content, current)) return; // leere neue Notiz nicht speichern
-  if (!force && stored && stored.title === title && stored.content === content) return;
-
-  current.title = title;
-  current.content = content;
-  await saveNote(current);
-  current = clone(notes.get(current.id));
-  $('#edit-heading').textContent = 'Notiz';
-  updateDateLine();
-  // Neue Notiz hat jetzt eine feste Adresse (ohne zusätzlichen Verlaufseintrag)
-  if (location.hash === '#/neu') history.replaceState(history.state, '', '#/n/' + encodeURIComponent(current.id));
+  const stored = reports.has(current.id);
+  if (!stored && isEmptyReport(current)) return; // leeren neuen Bericht nicht speichern
+  if (!force && !dirty && stored) return;
+  dirty = false;
+  await saveReport(current);
+  current.updated = reports.get(current.id).updated;
+  $('#edit-heading').textContent = 'Bericht';
+  updateStamp();
+  // Neuer Bericht hat jetzt eine feste Adresse (ohne zusätzlichen Verlaufseintrag)
+  if (location.hash === '#/neu') history.replaceState(history.state, '', '#/b/' + encodeURIComponent(current.id));
 }
 
 function scheduleSave() {
+  dirty = true;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => flushSave(), 400);
 }
 
-$('#title').addEventListener('input', scheduleSave);
-$('#content').addEventListener('input', scheduleSave);
-$('#title').addEventListener('keydown', e => {
-  if (e.key === 'Enter') { e.preventDefault(); $('#content').focus(); }
+$('#r-title').addEventListener('input', e => { current.title = e.target.value; scheduleSave(); });
+$('#r-date').addEventListener('change', e => {
+  if (!e.target.value) { e.target.value = current.date; return; }
+  current.date = e.target.value;
+  scheduleSave();
+});
+$('#r-notes').addEventListener('input', e => { current.notes = e.target.value; autogrow(e.target); scheduleSave(); });
+$('#r-title').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); $('#r-notes').focus(); }
 });
 
-async function closeEditor() {
-  if (recorder) await stopRecording(true);
-  await flushSave();
-  // Zurück zur Liste – über den Verlauf, damit die Zurück-Taste von Android passt
-  if (history.state && history.state.fromList) history.back();
-  else location.hash = '';
-}
-
-$('#back-btn').addEventListener('click', closeEditor);
-
-async function filesOf(note) {
-  const out = [];
-  for (const [i, a] of note.attachments.entries()) {
-    const rec = await dbGetFile(a.id);
-    if (rec) out.push(new File([rec.blob], attachmentFileName(note, a, i), { type: a.type || rec.blob.type }));
+$('#items').addEventListener('input', e => {
+  const el = e.target.closest('.item');
+  if (!el) return;
+  const item = findItem(el.dataset.id);
+  if (e.target.classList.contains('item-title')) item.title = e.target.value;
+  if (e.target.classList.contains('item-text')) { item.text = e.target.value; autogrow(e.target); }
+  scheduleSave();
+});
+$('#items').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.target.classList.contains('item-title')) {
+    e.preventDefault();
+    e.target.closest('.item').querySelector('.item-text').focus();
   }
-  return out;
-}
+});
 
-async function shareThings(text, title, files) {
-  const data = { text: text || undefined, title: title || undefined };
-  if (files.length && navigator.canShare && navigator.canShare({ files })) data.files = files;
-  if (navigator.share) {
-    try {
-      await navigator.share(data);
-    } catch (err) {
-      if (err.name !== 'AbortError') toast('Teilen nicht möglich: ' + err.message);
-    }
-  } else if (text && navigator.clipboard) {
-    await navigator.clipboard.writeText(text);
-    toast('Text in die Zwischenablage kopiert');
-  } else {
-    toast('Teilen wird von diesem Browser nicht unterstützt.');
+$('#add-item').addEventListener('click', () => {
+  const item = newItem();
+  current.items.push(item);
+  renderItems();
+  dirty = true;
+  flushSave(true);
+  const el = itemEl(item.id);
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.querySelector('.item-title').focus();
+});
+
+/* ---------- Unterpunkt-Menü ---------- */
+
+let menuItemId = null;
+
+$('#items').addEventListener('click', async e => {
+  const el = e.target.closest('.item');
+  if (!el) return;
+  const id = el.dataset.id;
+
+  if (e.target.closest('.item-menu-btn')) {
+    e.stopPropagation();
+    menuItemId = id;
+    const idx = current.items.findIndex(i => i.id === id);
+    const menu = $('#item-menu');
+    menu.querySelector('[data-action="item-up"]').hidden = idx === 0;
+    menu.querySelector('[data-action="item-down"]').hidden = idx === current.items.length - 1;
+    const rect = e.target.closest('.item-menu-btn').getBoundingClientRect();
+    toggleMenu(menu, true);
+    const top = Math.min(rect.bottom + 4, window.innerHeight - menu.offsetHeight - 8);
+    menu.style.top = Math.max(8, top) + 'px';
+    return;
   }
+
+  const act = e.target.closest('[data-act]');
+  if (act && act.dataset.act === 'photo') {
+    photoTarget = id;
+    $('#photo-file').value = '';
+    $('#photo-file').click();
+    return;
+  }
+  if (act && act.dataset.act === 'record') {
+    startRecording(id);
+    return;
+  }
+
+  const photoBtn = e.target.closest('.photos button[data-file]');
+  if (photoBtn) {
+    openViewer(id, photoBtn.dataset.file);
+    return;
+  }
+
+  const del = e.target.closest('.audio .del');
+  if (del) {
+    if (!confirm('Diese Sprachnotiz löschen?')) return;
+    await removeAttachment(id, del.closest('.audio').dataset.file);
+    toast('Sprachnotiz gelöscht');
+  }
+});
+
+function moveItem(id, delta) {
+  const idx = current.items.findIndex(i => i.id === id);
+  const to = idx + delta;
+  if (idx < 0 || to < 0 || to >= current.items.length) return;
+  const [item] = current.items.splice(idx, 1);
+  current.items.splice(to, 0, item);
+  renderItems();
+  flushSave(true);
+  itemEl(id).scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
-$('#share-btn').addEventListener('click', async () => {
-  await flushSave();
-  const note = { ...current, title: $('#title').value, content: $('#content').value };
-  const text = [note.title.trim(), note.content.trim()].filter(Boolean).join('\n\n');
-  if (!text && !note.attachments.length) return toast('Die Notiz ist leer.');
-  await shareThings(text, note.title.trim(), await filesOf(note));
-});
+async function deleteItem(id) {
+  const idx = current.items.findIndex(i => i.id === id);
+  const item = current.items[idx];
+  if (!item) return;
+  const hasContent = item.title.trim() || item.text.trim() || item.attachments.length;
+  if (hasContent && !confirm(`Unterpunkt ${idx + 1} mit allen Fotos und Sprachnotizen löschen?`)) return;
+  if (recorder && recTarget === id) await stopRecording(false);
+  current.items.splice(idx, 1);
+  renderItems();
+  await flushSave(true);
+  const ids = item.attachments.map(a => a.id);
+  if (ids.length) await dbDeleteFiles(ids);
+  ids.forEach(forgetUrl);
+  toast('Unterpunkt gelöscht');
+}
 
-// Beim Verlassen oder Wechseln der App sofort speichern
-document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) return;
-  if (recorder) stopRecording(true);
-  flushSave();
-});
-window.addEventListener('pagehide', () => flushSave());
+/* ---------- Anhänge ---------- */
 
-/* ---------- Anhänge: gemeinsam ---------- */
-
-async function addAttachments(items) {
-  // items: [{ kind, blob, duration? }]
-  const metas = items.map(it => ({
+async function addAttachments(itemId, list) {
+  // list: [{ kind, blob, duration? }]
+  const item = current && findItem(itemId);
+  if (!item) return false;
+  const metas = list.map(it => ({
     id: newId(),
     kind: it.kind,
     type: it.blob.type || (it.kind === 'photo' ? 'image/jpeg' : 'audio/webm'),
@@ -469,27 +600,31 @@ async function addAttachments(items) {
     ...(it.duration ? { duration: it.duration } : {}),
   }));
   try {
-    await dbPutFiles(metas.map((m, i) => ({ id: m.id, blob: items[i].blob })));
+    await dbPutFiles(metas.map((m, i) => ({ id: m.id, blob: list[i].blob })));
   } catch (err) {
     toast('Anhang konnte nicht gespeichert werden: ' + err.message);
-    return;
+    return false;
   }
-  current.attachments.push(...metas);
-  renderAttachments();
+  item.attachments.push(...metas);
+  renderAttachments(itemId);
   await flushSave(true);
+  return true;
 }
 
-async function removeAttachment(id) {
-  current.attachments = current.attachments.filter(a => a.id !== id);
+async function removeAttachment(itemId, fileId) {
+  const item = findItem(itemId);
+  if (!item) return;
+  item.attachments = item.attachments.filter(a => a.id !== fileId);
   await flushSave(true);
-  await dbDeleteFiles([id]);
-  forgetUrl(id);
-  renderAttachments();
+  await dbDeleteFiles([fileId]);
+  forgetUrl(fileId);
+  renderAttachments(itemId);
 }
 
 /* ---------- Fotos ---------- */
 
 const MAX_PHOTO_SIDE = 1920;
+let photoTarget = null;
 
 /** Verkleinert ein Foto (spart Speicher) und dreht es richtig; bei Problemen das Original. */
 async function shrinkPhoto(file) {
@@ -510,36 +645,31 @@ async function shrinkPhoto(file) {
   }
 }
 
-$('#photo-btn').addEventListener('click', () => {
-  $('#photo-file').value = '';
-  $('#photo-file').click();
-});
-
 $('#photo-file').addEventListener('change', async e => {
   const files = [...e.target.files].filter(f => f.type.startsWith('image/') || !f.type);
-  if (!files.length || !current) return;
+  const target = photoTarget;
+  if (!files.length || !current || !target) return;
   toast(files.length === 1 ? 'Foto wird gespeichert …' : `${files.length} Fotos werden gespeichert …`);
-  const items = [];
-  for (const f of files) items.push({ kind: 'photo', blob: await shrinkPhoto(f) });
-  await addAttachments(items);
-  toast(files.length === 1 ? 'Foto hinzugefügt' : `${files.length} Fotos hinzugefügt`);
+  const list = [];
+  for (const f of files) list.push({ kind: 'photo', blob: await shrinkPhoto(f) });
+  if (await addAttachments(target, list)) {
+    toast(files.length === 1 ? 'Foto hinzugefügt' : `${files.length} Fotos hinzugefügt`);
+  }
 });
 
-let viewerId = null;
+let viewer = null; // { itemId, fileId }
 
-$('#photos').addEventListener('click', async e => {
-  const btn = e.target.closest('button[data-id]');
-  if (!btn) return;
-  viewerId = btn.dataset.id;
-  $('#viewer-img').src = (await fileUrl(viewerId)) || '';
+async function openViewer(itemId, fileId) {
+  viewer = { itemId, fileId };
+  $('#viewer-img').src = (await fileUrl(fileId)) || '';
   $('#viewer').hidden = false;
   history.pushState({ ...(history.state || {}), viewer: true }, ''); // Zurück-Taste schließt die Ansicht
-});
+}
 
 function hideViewer() {
   $('#viewer').hidden = true;
   $('#viewer-img').removeAttribute('src');
-  viewerId = null;
+  viewer = null;
 }
 function closeViewer() {
   if ($('#viewer').hidden) return;
@@ -551,33 +681,42 @@ window.addEventListener('popstate', () => { if (!$('#viewer').hidden) hideViewer
 $('#viewer-close').addEventListener('click', closeViewer);
 $('#viewer-img').addEventListener('click', closeViewer);
 
+async function viewerFile() {
+  if (!viewer) return null;
+  const itemIndex = current.items.findIndex(i => i.id === viewer.itemId);
+  const item = current.items[itemIndex];
+  const photos = item.attachments.filter(a => a.kind === 'photo');
+  const att = photos.find(a => a.id === viewer.fileId);
+  const rec = await dbGetFile(viewer.fileId);
+  if (!rec || !att) return null;
+  const name = attachmentFileName(current, itemIndex, att, photos.indexOf(att));
+  return new File([rec.blob], name, { type: rec.blob.type });
+}
+
 $('#viewer-share').addEventListener('click', async () => {
-  const i = current.attachments.findIndex(a => a.id === viewerId);
-  const rec = await dbGetFile(viewerId);
-  if (!rec) return;
-  const file = new File([rec.blob], attachmentFileName(current, current.attachments[i], i), { type: rec.blob.type });
-  await shareThings('', '', [file]);
+  const file = await viewerFile();
+  if (file) await shareFiles([file], '', '');
 });
 
 $('#viewer-save').addEventListener('click', async () => {
-  const i = current.attachments.findIndex(a => a.id === viewerId);
-  const rec = await dbGetFile(viewerId);
-  if (!rec) return;
-  downloadBlob(attachmentFileName(current, current.attachments[i], i), rec.blob);
+  const file = await viewerFile();
+  if (!file) return;
+  downloadBlob(file.name, file);
   toast('Foto gespeichert (Ordner „Downloads“)');
 });
 
 $('#viewer-delete').addEventListener('click', async () => {
-  if (!confirm('Dieses Foto löschen?')) return;
-  const id = viewerId;
+  if (!viewer || !confirm('Dieses Foto löschen?')) return;
+  const { itemId, fileId } = viewer;
   closeViewer();
-  await removeAttachment(id);
+  await removeAttachment(itemId, fileId);
   toast('Foto gelöscht');
 });
 
 /* ---------- Sprachnotizen ---------- */
 
 let recorder = null;
+let recTarget = null;
 let recChunks = [];
 let recStart = 0;
 let recTimer = null;
@@ -591,8 +730,8 @@ function pickAudioType() {
     .find(t => MediaRecorder.isTypeSupported(t)) || '';
 }
 
-$('#record-btn').addEventListener('click', async () => {
-  if (recorder) return;
+async function startRecording(itemId) {
+  if (recorder) return toast('Es läuft schon eine Aufnahme.');
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
     return toast('Aufnehmen wird von diesem Browser nicht unterstützt.');
   }
@@ -606,6 +745,7 @@ $('#record-btn').addEventListener('click', async () => {
   }
   const type = pickAudioType();
   recorder = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
+  recTarget = itemId;
   recChunks = [];
   recDiscard = false;
   recorder.ondataavailable = e => { if (e.data && e.data.size) recChunks.push(e.data); };
@@ -613,13 +753,16 @@ $('#record-btn').addEventListener('click', async () => {
     stream.getTracks().forEach(t => t.stop());
     const duration = (Date.now() - recStart) / 1000;
     const blob = new Blob(recChunks, { type: recorder.mimeType || type || 'audio/webm' });
+    const target = recTarget;
     recorder = null;
+    recTarget = null;
     clearInterval(recTimer);
     $('#recording').hidden = true;
-    $('#tools').hidden = false;
-    if (!recDiscard && blob.size > 0 && current) {
-      await addAttachments([{ kind: 'audio', blob, duration }]);
-      toast('Sprachnotiz gespeichert (' + formatDuration(duration) + ')');
+    document.querySelectorAll('.recording-target').forEach(el => el.classList.remove('recording-target'));
+    if (!recDiscard && blob.size > 0 && current && findItem(target)) {
+      if (await addAttachments(target, [{ kind: 'audio', blob, duration }])) {
+        toast('Sprachnotiz gespeichert (' + formatDuration(duration) + ')');
+      }
     }
     const done = recDone;
     recDone = null;
@@ -627,15 +770,17 @@ $('#record-btn').addEventListener('click', async () => {
   };
   recorder.start(1000);
   recStart = Date.now();
+  const idx = current.items.findIndex(i => i.id === itemId);
+  $('#rec-label').textContent = 'Aufnahme für ' + itemLabel(current.items[idx], idx);
   $('#rec-time').textContent = '0:00';
-  $('#tools').hidden = true;
   $('#recording').hidden = false;
+  itemEl(itemId).classList.add('recording-target');
   recTimer = setInterval(() => {
     const sec = (Date.now() - recStart) / 1000;
     $('#rec-time').textContent = formatDuration(sec);
     if (sec >= MAX_RECORD_SECONDS) stopRecording(true);
   }, 250);
-});
+}
 
 /** Beendet die Aufnahme; keep = speichern, sonst verwerfen. */
 function stopRecording(keep) {
@@ -650,13 +795,134 @@ function stopRecording(keep) {
 $('#rec-stop').addEventListener('click', () => stopRecording(true));
 $('#rec-cancel').addEventListener('click', () => stopRecording(false));
 
-$('#audios').addEventListener('click', async e => {
-  const del = e.target.closest('.del');
-  if (!del) return;
-  if (!confirm('Diese Sprachnotiz löschen?')) return;
-  await removeAttachment(del.closest('.audio').dataset.id);
-  toast('Sprachnotiz gelöscht');
+/* ---------- Schließen / Verlassen ---------- */
+
+async function closeEditor() {
+  if (recorder) await stopRecording(true);
+  await flushSave();
+  // Zurück zur Liste – über den Verlauf, damit die Zurück-Taste von Android passt
+  if (history.state && history.state.fromList) history.back();
+  else location.hash = '';
+}
+
+$('#back-btn').addEventListener('click', closeEditor);
+
+// Beim Verlassen oder Wechseln der App sofort speichern
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) return;
+  if (recorder) stopRecording(true);
+  flushSave();
 });
+window.addEventListener('pagehide', () => flushSave());
+
+/* ======================================================================
+   Export eines ganzen Berichts (eine HTML-Datei mit eingebetteten Fotos/Audio)
+   ====================================================================== */
+
+async function buildReportHtml(r, { forPrint = false } = {}) {
+  const parts = [];
+  for (const [idx, item] of r.items.entries()) {
+    const photos = [];
+    const audios = [];
+    for (const a of item.attachments) {
+      const rec = await dbGetFile(a.id);
+      if (!rec) continue;
+      const data = await blobToDataUrl(rec.blob);
+      if (a.kind === 'photo') photos.push(`<figure><img src="${data}" alt="Foto"></figure>`);
+      else {
+        const len = a.duration ? ` (${formatDuration(a.duration)})` : '';
+        audios.push(`<div class="audio"><span>🎤 Sprachnotiz ${audios.length + 1}${len}</span>` +
+          (forPrint ? '' : `<audio controls src="${data}"></audio>`) + '</div>');
+      }
+    }
+    const title = item.title.trim() || `Unterpunkt ${idx + 1}`;
+    parts.push(`<section class="item">
+      <h2><span class="num">${idx + 1}</span> ${escapeHtml(title)}</h2>
+      ${item.text.trim() ? `<div class="text">${escapeHtml(item.text.trim())}</div>` : ''}
+      ${photos.length ? `<div class="photos">${photos.join('')}</div>` : ''}
+      ${audios.join('')}
+    </section>`);
+  }
+
+  const title = displayTitle(r);
+  return `<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtml(title)} – ${formatDay(r.date)}</title>
+<style>
+  body { font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #1c1c22; margin: 0; background: #fff; }
+  main { max-width: 820px; margin: 0 auto; padding: 24px 20px 40px; }
+  header { border-bottom: 3px solid #3949ab; padding-bottom: 12px; margin-bottom: 18px; }
+  h1 { font-size: 26px; margin: 0 0 4px; }
+  .date { color: #555; }
+  .notes { white-space: pre-wrap; background: #f3f4fa; border-left: 4px solid #3949ab; padding: 10px 14px; margin: 0 0 20px; border-radius: 4px; }
+  .item { margin: 0 0 22px; padding-bottom: 16px; border-bottom: 1px solid #ddd; break-inside: avoid-page; }
+  .item:last-of-type { border-bottom: 0; }
+  h2 { font-size: 18px; margin: 0 0 8px; display: flex; align-items: center; gap: 10px; }
+  .num { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; background: #3949ab; color: #fff; font-size: 14px; flex: none; }
+  .text { white-space: pre-wrap; margin: 0 0 10px; }
+  .photos { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 0 0 10px; }
+  figure { margin: 0; break-inside: avoid; }
+  figure img { width: 100%; height: auto; display: block; border-radius: 4px; }
+  .audio { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 4px 0; color: #444; }
+  .audio audio { max-width: 100%; }
+  footer { color: #888; font-size: 12px; margin-top: 24px; }
+  @media print {
+    main { padding: 0; max-width: none; }
+    .item { break-inside: auto; }
+    h2 { break-after: avoid; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>${escapeHtml(title)}</h1>
+    <div class="date">${formatLongDay(r.date)}</div>
+  </header>
+  ${r.notes.trim() ? `<div class="notes">${escapeHtml(r.notes.trim())}</div>` : ''}
+  ${parts.join('\n')}
+  <footer>Erstellt am ${dateFmt.format(new Date())}, ${timeFmt.format(new Date())} · ${r.items.length} Unterpunkt${r.items.length === 1 ? '' : 'e'}</footer>
+</main>
+${forPrint ? '<script>window.addEventListener("load", () => setTimeout(() => window.print(), 300));<\/script>' : ''}
+</body>
+</html>`;
+}
+
+async function reportFile(r) {
+  const html = await buildReportHtml(r);
+  return new File([html], reportFileName(r), { type: 'text/html' });
+}
+
+async function shareFiles(files, title, text) {
+  const data = { title: title || undefined, text: text || undefined };
+  if (files.length && navigator.canShare && navigator.canShare({ files })) {
+    data.files = files;
+  } else if (files.length) {
+    // Teilen von Dateien geht hier nicht → Datei speichern
+    files.forEach(f => downloadBlob(f.name, f));
+    toast('Teilen nicht möglich – Datei wurde gespeichert (Ordner „Downloads“)');
+    return;
+  }
+  if (!navigator.share) return toast('Teilen wird von diesem Browser nicht unterstützt.');
+  try {
+    await navigator.share(data);
+  } catch (err) {
+    if (err.name !== 'AbortError') toast('Teilen nicht möglich: ' + err.message);
+  }
+}
+
+async function shareReport() {
+  await flushSave();
+  if (isEmptyReport(current)) return toast('Der Bericht ist leer.');
+  toast('Bericht wird erstellt …');
+  const file = await reportFile(current);
+  await shareFiles([file], displayTitle(current), `Bericht: ${displayTitle(current)} (${formatDay(current.date)})`);
+}
+
+$('#share-btn').addEventListener('click', shareReport);
 
 /* ======================================================================
    Menüs
@@ -665,12 +931,13 @@ $('#audios').addEventListener('click', async e => {
 function toggleMenu(menu, show) {
   document.querySelectorAll('.menu').forEach(m => { if (m !== menu) m.hidden = true; });
   menu.hidden = show === undefined ? !menu.hidden : !show;
+  if (menu !== $('#item-menu')) menu.style.top = '';
 }
 
 $('#menu-btn').addEventListener('click', async e => {
   e.stopPropagation();
   const last = localStorage.getItem('lastBackup');
-  let info = 'Letzte Sicherung: ' + (last ? formatDate(Number(last)) : 'noch nie') + '\nNotizen: ' + notes.size;
+  const info = 'Letzte Sicherung: ' + (last ? formatStamp(Number(last)) : 'noch nie') + '\nBerichte: ' + reports.size;
   toggleMenu($('#main-menu'));
   $('#backup-info').textContent = info;
   if (navigator.storage && navigator.storage.estimate) {
@@ -680,13 +947,14 @@ $('#menu-btn').addEventListener('click', async e => {
     } catch { /* egal */ }
   }
 });
-$('#note-menu-btn').addEventListener('click', e => {
+$('#report-menu-btn').addEventListener('click', e => {
   e.stopPropagation();
-  toggleMenu($('#note-menu'));
+  toggleMenu($('#report-menu'));
 });
 document.addEventListener('click', e => {
   if (!e.target.closest('.menu')) document.querySelectorAll('.menu').forEach(m => { m.hidden = true; });
 });
+window.addEventListener('scroll', () => { $('#item-menu').hidden = true; }, { passive: true });
 
 document.querySelectorAll('.menu').forEach(menu => menu.addEventListener('click', e => {
   const btn = e.target.closest('button[data-action]');
@@ -698,32 +966,27 @@ document.querySelectorAll('.menu').forEach(menu => menu.addEventListener('click'
 const actions = {
   async 'export-all'() {
     toast('Sicherung wird erstellt …');
-    const list = [...notes.values()].sort((a, b) => b.updated - a.updated);
+    const list = [...reports.values()].sort((a, b) => b.date.localeCompare(a.date));
     const out = [];
     let missing = 0;
-    for (const n of list) {
-      const atts = [];
-      for (const a of n.attachments) {
-        const rec = await dbGetFile(a.id);
-        if (rec) atts.push({ ...a, data: await blobToDataUrl(rec.blob) });
-        else missing++;
+    for (const r of list) {
+      const items = [];
+      for (const item of r.items) {
+        const atts = [];
+        for (const a of item.attachments) {
+          const rec = await dbGetFile(a.id);
+          if (rec) atts.push({ ...a, data: await blobToDataUrl(rec.blob) });
+          else missing++;
+        }
+        items.push({ ...item, attachments: atts });
       }
-      out.push({ ...n, attachments: atts });
+      out.push({ ...r, items });
     }
-    const data = { app: 'notizen', version: 2, exported: new Date().toISOString(), notes: out };
-    download(`notizen-sicherung-${today()}.json`, JSON.stringify(data), 'application/json');
+    const data = { app: 'berichte', version: 3, exported: new Date().toISOString(), reports: out };
+    downloadBlob(`berichte-sicherung-${isoDate(Date.now())}.json`,
+      new Blob([JSON.stringify(data)], { type: 'application/json' }));
     localStorage.setItem('lastBackup', String(Date.now()));
-    toast(`${notes.size} Notizen exportiert (Ordner „Downloads“)` + (missing ? ` – ${missing} Anhänge fehlten` : ''));
-  },
-
-  'export-all-txt'() {
-    const list = [...notes.values()].sort((a, b) => b.updated - a.updated);
-    const text = list.map(n => {
-      const extra = attachmentSummary(n);
-      return `${displayTitle(n)}\n${formatDate(n.updated)}\n\n${n.content.trim()}` + (extra ? `\n\n[Anhänge: ${extra}]` : '');
-    }).join('\n\n' + '─'.repeat(30) + '\n\n');
-    download(`notizen-${today()}.txt`, text + '\n', 'text/plain');
-    toast('Textdatei gespeichert (Ordner „Downloads“) – ohne Fotos/Sprachnotizen');
+    toast(`${reports.size} Berichte gesichert (Ordner „Downloads“)` + (missing ? ` – ${missing} Anhänge fehlten` : ''));
   },
 
   import() {
@@ -731,45 +994,91 @@ const actions = {
     $('#import-file').click();
   },
 
-  async 'save-txt'() {
+  async 'export-html'() {
     await flushSave();
-    const note = { ...current, title: $('#title').value, content: $('#content').value };
-    const text = noteAsText(note);
-    if (!text) return toast('Die Notiz ist leer.');
-    download(safeFileName(displayTitle(note)) + '.txt', text + '\n', 'text/plain');
-    toast('Gespeichert (Ordner „Downloads“)');
+    if (isEmptyReport(current)) return toast('Der Bericht ist leer.');
+    toast('Bericht wird erstellt …');
+    const file = await reportFile(current);
+    downloadBlob(file.name, file);
+    toast('Bericht gespeichert (Ordner „Downloads“)');
   },
 
-  async delete() {
-    if (!confirm('Diese Notiz löschen?')) return;
+  'share-report': shareReport,
+
+  async print() {
+    await flushSave();
+    if (isEmptyReport(current)) return toast('Der Bericht ist leer.');
+    const win = window.open('', '_blank'); // sofort öffnen, sonst blockiert der Browser das Fenster
+    const html = await buildReportHtml(current, { forPrint: true });
+    if (!win) {
+      toast('Druckansicht wurde blockiert – bitte Pop-ups erlauben.');
+      return;
+    }
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+  },
+
+  async 'delete-report'() {
+    if (!confirm('Diesen Bericht mit allen Unterpunkten, Fotos und Sprachnotizen löschen?')) return;
     if (recorder) await stopRecording(false);
     clearTimeout(saveTimer);
     await saving;
-    const removed = notes.get(current.id);
+    const removed = reports.get(current.id);
     let removedFiles = [];
     if (removed) {
-      for (const a of removed.attachments) {
+      for (const a of allAttachments(removed)) {
         const rec = await dbGetFile(a.id);
         if (rec) removedFiles.push(rec);
       }
-      await dbDeleteNote(removed.id, removed.attachments.map(a => a.id));
-      notes.delete(removed.id);
-      removed.attachments.forEach(a => forgetUrl(a.id));
-    } else if (current.attachments.length) {
-      await dbDeleteFiles(current.attachments.map(a => a.id));
+      await dbDeleteReport(removed.id, allAttachments(removed).map(a => a.id));
+      reports.delete(removed.id);
+      allAttachments(removed).forEach(a => forgetUrl(a.id));
+    } else if (allAttachments(current).length) {
+      await dbDeleteFiles(allAttachments(current).map(a => a.id));
     }
     current = null;
     await closeEditor();
     if (removed) {
-      toast('Notiz gelöscht', 'Rückgängig', async () => {
+      toast('Bericht gelöscht', 'Rückgängig', async () => {
         await dbPutFiles(removedFiles);
-        await dbPutNotes([removed]);
-        notes.set(removed.id, removed);
+        await dbPutReports([removed]);
+        reports.set(removed.id, removed);
         renderList();
       });
     }
   },
+
+  'item-up'() { moveItem(menuItemId, -1); },
+  'item-down'() { moveItem(menuItemId, 1); },
+  'item-delete'() { deleteItem(menuItemId); },
 };
+
+/* ---------- Import ---------- */
+
+/** Wandelt einen Eintrag aus einer Sicherung in einen Bericht; Anhänge-Daten werden gesammelt. */
+async function importEntry(raw, fileRecs) {
+  const isOldNote = !Array.isArray(raw.items) && ('content' in raw || 'attachments' in raw);
+  const base = isOldNote
+    ? { ...noteToReport({ ...raw, attachments: [] }), items: [{ id: newId(), title: '', text: raw.content || '', attachments: raw.attachments || [] }] }
+    : raw;
+  const r = normalize({ ...base, items: [] });
+  for (const rawItem of (Array.isArray(base.items) ? base.items : [])) {
+    const item = normalizeItem({ ...rawItem, attachments: [] });
+    for (const a of (Array.isArray(rawItem.attachments) ? rawItem.attachments : [])) {
+      if (!a || !a.data || (a.kind !== 'photo' && a.kind !== 'audio')) continue;
+      try {
+        const blob = await dataUrlToBlob(a.data);
+        const { data, ...meta } = a;
+        meta.id = String(meta.id || newId());
+        fileRecs.push({ id: meta.id, blob });
+        item.attachments.push(meta);
+      } catch { /* defekter Anhang – überspringen */ }
+    }
+    r.items.push(item);
+  }
+  return r;
+}
 
 $('#import-file').addEventListener('change', async e => {
   const files = [...e.target.files];
@@ -784,7 +1093,7 @@ $('#import-file').addEventListener('change', async e => {
     if (/^\s*[[{]/.test(text)) {
       try {
         const data = JSON.parse(text);
-        list = Array.isArray(data) ? data : data && data.notes;
+        list = Array.isArray(data) ? data : data && (data.reports || data.notes);
       } catch { /* doch keine Sicherung */ }
     }
     if (/\.json$/i.test(file.name) && !Array.isArray(list)) {
@@ -796,48 +1105,39 @@ $('#import-file').addEventListener('change', async e => {
       if (list.length) toast('Sicherung wird importiert …');
       for (const raw of list) {
         if (!raw || typeof raw !== 'object') { skipped++; continue; }
-        const n = normalize({ ...raw, id: raw.id || newId() });
-        const existing = notes.get(n.id);
-        if (existing && existing.updated >= n.updated) { skipped++; continue; }
-
+        const existing = raw.id && reports.get(String(raw.id));
+        if (existing && existing.updated >= (Number(raw.updated) || 0)) { skipped++; continue; }
         const fileRecs = [];
-        n.attachments = [];
-        for (const a of (Array.isArray(raw.attachments) ? raw.attachments : [])) {
-          if (!a || !a.data || (a.kind !== 'photo' && a.kind !== 'audio')) continue;
-          try {
-            const blob = await dataUrlToBlob(a.data);
-            const { data, ...meta } = a;
-            meta.id = String(meta.id || newId());
-            fileRecs.push({ id: meta.id, blob });
-            n.attachments.push(meta);
-          } catch { /* defekter Anhang – überspringen */ }
-        }
+        const r = await importEntry(raw, fileRecs);
         try {
           if (fileRecs.length) await dbPutFiles(fileRecs);
-          await dbPutNotes([n]);
+          await dbPutReports([r]);
         } catch (err) {
           toast('Import abgebrochen: ' + err.message);
           renderList();
           return;
         }
         if (existing) {
-          // alte Anhänge, die in der neueren Fassung fehlen, aufräumen
-          const keep = new Set(n.attachments.map(a => a.id));
-          const old = existing.attachments.map(a => a.id).filter(id => !keep.has(id));
+          // Anhänge, die in der neueren Fassung fehlen, aufräumen
+          const keep = new Set(allAttachments(r).map(a => a.id));
+          const old = allAttachments(existing).map(a => a.id).filter(id => !keep.has(id));
           if (old.length) await dbDeleteFiles(old);
-          existing.attachments.forEach(a => forgetUrl(a.id));
+          allAttachments(existing).forEach(a => forgetUrl(a.id));
           updated++;
         } else {
           added++;
         }
-        notes.set(n.id, n);
+        reports.set(r.id, r);
       }
     } else {
-      // Textdatei → neue Notiz, Dateiname als Titel
+      // Textdatei → neuer Bericht, Dateiname als Titel
       const now = Date.now();
-      const n = normalize({ id: newId(), title: file.name.replace(/\.txt$/i, ''), content: text.trimEnd(), created: now, updated: now });
-      await dbPutNotes([n]);
-      notes.set(n.id, n);
+      const r = normalize({
+        id: newId(), title: file.name.replace(/\.txt$/i, ''), date: isoDate(now), created: now, updated: now,
+        items: [{ title: '', text: text.trimEnd() }],
+      });
+      await dbPutReports([r]);
+      reports.set(r.id, r);
       added++;
     }
   }
@@ -859,12 +1159,12 @@ async function route() {
   document.querySelectorAll('.menu').forEach(m => { m.hidden = true; });
   hideViewer();
   const hash = location.hash;
-  const match = hash.match(/^#\/n\/(.+)$/);
+  const match = hash.match(/^#\/b\/(.+)$/);
 
   if (hash === '#/neu' || match) {
     const id = match ? decodeURIComponent(match[1]) : null;
     if (current && current.id === id) return; // schon offen (z. B. nach replaceState)
-    if (id && !notes.has(id)) { location.hash = ''; return; }
+    if (id && !reports.has(id)) { location.hash = ''; return; }
     showEditor(id);
   } else {
     if (recorder) await stopRecording(true);
@@ -876,7 +1176,7 @@ async function route() {
   }
 }
 
-// Merkt sich, dass der Editor aus der Liste geöffnet wurde (für „Zurück“)
+// Merkt sich, dass der Bericht aus der Liste geöffnet wurde (für „Zurück“)
 window.addEventListener('hashchange', e => {
   const oldHash = new URL(e.oldURL).hash;
   if ((!oldHash || oldHash === '#') && location.hash) history.replaceState({ fromList: true }, '');
@@ -889,7 +1189,7 @@ window.addEventListener('hashchange', e => {
 
 (async function init() {
   try {
-    for (const n of await dbAllNotes()) notes.set(n.id, normalize(n));
+    for (const r of await dbAllReports()) reports.set(r.id, normalize(r));
   } catch (err) {
     toast('Speicher nicht verfügbar: ' + err.message);
   }

@@ -1,7 +1,7 @@
 {
-  "name": "Notizen",
-  "short_name": "Notizen",
-  "description": "Einfache Notizen – offline, alles bleibt auf dem Gerät.",
+  "name": "Berichte",
+  "short_name": "Berichte",
+  "description": "Berichte mit Unterpunkten, Fotos und Sprachnotizen – offline, alles bleibt auf dem Gerät.",
   "lang": "de",
   "start_url": "./",
   "scope": "./",

@@ -1,40 +1,46 @@
-# Notizen
+# MyNotes
 
-Einfache Notizen-App in zwei Varianten:
+Zwei Apps:
 
-| | Web-App (`web/`) | Android-App (`app/`) |
+| | Web-App „Berichte“ (`web/`) | Android-App „Notizen“ (`app/`) |
 |---|---|---|
 | Installation | Im Browser öffnen, „Zum Startbildschirm hinzufügen“ | APK installieren |
 | Offline | ✅ nach dem ersten Öffnen | ✅ |
 | Speicherort | Browser-Speicher (IndexedDB) auf dem Gerät | App-Speicher (`notes.json`) |
-| Fotos & Sprachnotizen pro Notiz | ✅ | – |
+| Inhalt | Berichte mit Unterpunkten, Fotos, Sprachnotizen | einfache Textnotizen |
+| Export eines Berichts (HTML, Teilen, PDF) | ✅ | – |
 | Export/Import als Datei | ✅ | – |
 
-Beide: Notizen mit Titel und Text, **automatisches Speichern**, Suche, Teilen, Löschen;
-sortiert nach „zuletzt geändert“; leere neue Notizen werden verworfen; keine Daten verlassen das Gerät.
+Beide: **automatisches Speichern**, Suche, Teilen, Löschen; keine Daten verlassen das Gerät.
 
-## Web-App
+## Web-App „Berichte“
 
 Adresse: **https://gt4371.github.io/MyNotes/**
 
 1. Auf dem Handy in **Chrome** öffnen.
-2. Menü **⋮ → „Zum Startbildschirm hinzufügen“** bzw. **„App installieren“**.
-3. Fertig – ab jetzt startet „Notizen“ wie eine App, auch ohne Internet.
+2. Menü **⋮ → „App installieren“** bzw. **„Zum Startbildschirm hinzufügen“**.
+3. Fertig – ab jetzt startet „Berichte“ wie eine App, auch ohne Internet.
 
-**Fotos und Sprachnotizen:** In jeder Notiz unten **📷 Foto** (Kamera oder Galerie, mehrere auf einmal) und
-**🎤 Sprachnotiz** (Aufnahme mit „Fertig“ beenden oder „Verwerfen“, max. 15 Minuten).
-Fotos werden auf max. 1920 Pixel verkleinert, um Speicher zu sparen. Foto antippen = Vollbild mit Teilen,
-Speichern und Löschen. Beim ersten Aufnehmen fragt der Browser nach der Mikrofon-Erlaubnis.
+**Aufbau eines Berichts**
+- **Titel**, **Datum** (vorbelegt mit heute) und **Notizen** zum ganzen Bericht
+- beliebig viele **Unterpunkte**, jeweils mit Überschrift, **Text**, **📷 Fotos** (Kamera oder Galerie)
+  und **🎤 Sprachnotizen**; über ⋮ am Unterpunkt nach oben/unten verschieben oder löschen
+- gespeichert wird automatisch; Fotos werden auf max. 1920 Pixel verkleinert
+- Foto antippen = Vollbild mit Teilen, Speichern, Löschen; Aufnahme mit „Fertig“ beenden oder „Verwerfen“ (max. 15 Min.)
 
-**Dateien:** Im Menü ⋮ der Liste gibt es
-- **Sicherung exportieren** – alle Notizen inkl. Fotos und Sprachnotizen als `notizen-sicherung-JJJJ-MM-TT.json` (Ordner „Downloads“),
-- **Alle als Textdatei exportieren** – lesbare `.txt`-Datei (nur Text),
-- **Importieren** – eine Sicherung zurückladen (bereits vorhandene, neuere Notizen bleiben unverändert) oder `.txt`-Dateien als neue Notizen.
+**Bericht exportieren** (Menü ⋮ im Bericht bzw. ⇪ oben):
+- **Als Datei speichern (HTML)** – der ganze Bericht in *einer* Datei (`Bericht JJJJ-MM-TT Titel.html`):
+  Fotos eingebettet, Sprachnotizen abspielbar; öffnet sich in jedem Browser
+- **Teilen** – dieselbe Datei direkt per WhatsApp, Mail usw.
+- **Drucken / als PDF speichern** – Druckansicht (Sprachnotizen nur als Hinweis mit Länge)
 
-In einer Notiz speichert **⋮ → Als Textdatei speichern** diese eine Notiz als `.txt`.
+**Sicherung** (Menü ⋮ in der Liste): alle Berichte inkl. Fotos und Sprachnotizen als
+`berichte-sicherung-JJJJ-MM-TT.json`; **Sicherung importieren** spielt sie wieder ein
+(auch ältere Notizen-Sicherungen und `.txt`-Dateien). Frühere Notizen wurden automatisch zu Berichten
+mit einem Unterpunkt.
 
-⚠️ Die Notizen liegen im Browser. Wer in Chrome „Browserdaten löschen“ inkl. Website-Daten wählt, löscht sie mit –
-deshalb ab und zu eine **Sicherung exportieren**. Das Menü zeigt, wann zuletzt gesichert wurde.
+⚠️ Die Daten liegen im Browser. Wer in Chrome „Browserdaten löschen“ inkl. Website-Daten wählt, löscht sie mit –
+deshalb regelmäßig eine **Sicherung exportieren**. Das Menü zeigt, wann zuletzt gesichert wurde.
 
 Veröffentlicht wird automatisch per GitHub Actions („Web-App veröffentlichen“) bei jeder Änderung in `web/`.
 Nach Änderungen an den App-Dateien in `web/sw.js` die `VERSION` erhöhen.

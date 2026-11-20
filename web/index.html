@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Notizen</title>
-  <meta name="description" content="Einfache Notizen – offline, alles bleibt auf dem Gerät.">
+  <title>Berichte</title>
+  <meta name="description" content="Berichte mit Unterpunkten, Fotos und Sprachnotizen – offline, alles bleibt auf dem Gerät.">
   <meta name="theme-color" content="#3949ab">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
@@ -12,42 +12,45 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- Liste -->
+  <!-- Liste der Berichte -->
   <section id="list-view" class="view">
     <header class="bar">
-      <h1>Notizen</h1>
+      <h1>Berichte</h1>
       <button id="menu-btn" class="icon-btn" aria-label="Menü" aria-haspopup="true">⋮</button>
     </header>
     <div class="search-wrap">
-      <input id="search" type="search" placeholder="Notizen durchsuchen" autocomplete="off">
+      <input id="search" type="search" placeholder="Berichte durchsuchen" autocomplete="off">
     </div>
-    <ul id="notes" class="notes"></ul>
+    <ul id="reports" class="notes"></ul>
     <p id="empty" class="empty" hidden></p>
-    <button id="add-btn" class="fab" aria-label="Neue Notiz">+</button>
+    <button id="add-btn" class="fab" aria-label="Neuer Bericht">+</button>
   </section>
 
-  <!-- Bearbeiten -->
+  <!-- Bericht bearbeiten -->
   <section id="edit-view" class="view" hidden>
     <header class="bar">
       <button id="back-btn" class="icon-btn" aria-label="Zurück">←</button>
-      <h1 id="edit-heading">Notiz</h1>
-      <button id="share-btn" class="icon-btn" aria-label="Teilen" title="Teilen">⇪</button>
-      <button id="note-menu-btn" class="icon-btn" aria-label="Weitere Aktionen" aria-haspopup="true">⋮</button>
+      <h1 id="edit-heading">Bericht</h1>
+      <button id="share-btn" class="icon-btn" aria-label="Bericht teilen" title="Bericht teilen">⇪</button>
+      <button id="report-menu-btn" class="icon-btn" aria-label="Weitere Aktionen" aria-haspopup="true">⋮</button>
     </header>
     <div class="editor">
-      <input id="title" class="title-input" placeholder="Titel" autocomplete="off" enterkeyhint="next">
-      <p id="date" class="date"></p>
-      <div id="photos" class="photos" hidden></div>
-      <div id="audios" class="audios" hidden></div>
-      <textarea id="content" placeholder="Notiz schreiben …"></textarea>
+      <input id="r-title" class="title-input" placeholder="Titel des Berichts" autocomplete="off" enterkeyhint="next">
+      <label class="date-row">
+        <span>Datum</span>
+        <input id="r-date" type="date">
+      </label>
+      <textarea id="r-notes" class="autogrow notes-input" rows="2" placeholder="Notizen zum Bericht …"></textarea>
+
+      <h2 class="section-title">Unterpunkte</h2>
+      <div id="items"></div>
+      <button id="add-item" class="add-item" type="button">+ Unterpunkt hinzufügen</button>
+      <p id="r-updated" class="date"></p>
     </div>
-    <footer class="toolbar">
-      <div id="tools" class="tools">
-        <button id="photo-btn" class="tool-btn" type="button"><span aria-hidden="true">📷</span> Foto</button>
-        <button id="record-btn" class="tool-btn" type="button"><span aria-hidden="true">🎤</span> Sprachnotiz</button>
-      </div>
-      <div id="recording" class="recording" hidden>
+    <footer id="recording" class="toolbar" hidden>
+      <div class="recording">
         <span class="rec-dot" aria-hidden="true"></span>
+        <span id="rec-label" class="rec-label">Aufnahme</span>
         <span id="rec-time">0:00</span>
         <button id="rec-cancel" class="tool-btn" type="button">Verwerfen</button>
         <button id="rec-stop" class="tool-btn primary" type="button">■ Fertig</button>
@@ -69,14 +72,20 @@
 
   <!-- Menüs -->
   <div id="main-menu" class="menu" hidden role="menu">
-    <button data-action="export-all" role="menuitem">Sicherung exportieren (alle Notizen)</button>
-    <button data-action="export-all-txt" role="menuitem">Alle als Textdatei exportieren</button>
-    <button data-action="import" role="menuitem">Importieren (Sicherung oder .txt)</button>
+    <button data-action="export-all" role="menuitem">Sicherung exportieren (alle Berichte)</button>
+    <button data-action="import" role="menuitem">Sicherung importieren</button>
     <p id="backup-info" class="menu-info"></p>
   </div>
-  <div id="note-menu" class="menu" hidden role="menu">
-    <button data-action="save-txt" role="menuitem">Als Textdatei speichern</button>
-    <button data-action="delete" role="menuitem" class="danger">Löschen</button>
+  <div id="report-menu" class="menu" hidden role="menu">
+    <button data-action="export-html" role="menuitem">Bericht als Datei speichern (HTML)</button>
+    <button data-action="share-report" role="menuitem">Bericht teilen</button>
+    <button data-action="print" role="menuitem">Drucken / als PDF speichern</button>
+    <button data-action="delete-report" role="menuitem" class="danger">Bericht löschen</button>
+  </div>
+  <div id="item-menu" class="menu" hidden role="menu">
+    <button data-action="item-up" role="menuitem">↑ Nach oben</button>
+    <button data-action="item-down" role="menuitem">↓ Nach unten</button>
+    <button data-action="item-delete" role="menuitem" class="danger">Unterpunkt löschen</button>
   </div>
 
   <input id="photo-file" type="file" accept="image/*" multiple hidden>
