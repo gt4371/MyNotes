@@ -2,7 +2,7 @@
 
 /* ======================================================================
    Datenmodell
-   Bericht: { id, title, date (JJJJ-MM-TT), notes, created, updated, items: [Unterpunkt] }
+   Bericht: { id, title, date (JJJJ-MM-TT), place, notes, created, updated, items: [Unterpunkt] }
    Unterpunkt: { id, title, text, attachments: [{ id, kind: 'photo'|'audio', type, created, duration? }] }
    Die Foto-/Audiodaten selbst liegen getrennt im Store "files" (Schlüssel = Anhang-id).
    ====================================================================== */
@@ -90,6 +90,7 @@ function normalize(r) {
     id: String(r.id || newId()),
     title: String(r.title || ''),
     date: /^\d{4}-\d{2}-\d{2}$/.test(r.date || '') ? r.date : isoDate(created),
+    place: String(r.place || ''),
     notes: String(r.notes || ''),
     created,
     updated: Number(r.updated) || created,
@@ -271,7 +272,7 @@ function autogrow(el) {
 
 function matches(r, q) {
   if (!q) return true;
-  const hay = [r.title, r.notes, ...r.items.flatMap(i => [i.title, i.text])].join('\n').toLowerCase();
+  const hay = [r.title, r.place, r.notes, ...r.items.flatMap(i => [i.title, i.text])].join('\n').toLowerCase();
   return hay.includes(q);
 }
 
@@ -293,7 +294,7 @@ function renderList() {
       <div class="note-row">
         <div>
           <h2>${highlight(displayTitle(r), query)}</h2>
-          <time>${formatDay(r.date)}</time>
+          <time>${formatDay(r.date)}${r.place.trim() ? ` · <span class="place">📍 ${highlight(r.place.trim(), query)}</span>` : ''}</time>
           ${preview ? `<p>${highlight(preview.slice(0, 300), query)}</p>` : ''}
           <span class="badges">${meta}</span>
         </div>
@@ -345,6 +346,7 @@ function showEditor(id) {
 
   $('#r-title').value = current.title;
   $('#r-date').value = current.date;
+  $('#r-place').value = current.place;
   $('#r-notes').value = current.notes;
   $('#edit-heading').textContent = existing ? 'Bericht' : 'Neuer Bericht';
   updateStamp();
@@ -368,16 +370,20 @@ function renderItems() {
   $('#items').innerHTML = current.items.map((item, idx) => `
     <section class="item" data-id="${escapeHtml(item.id)}">
       <div class="item-head">
+        <button type="button" class="fold-btn" aria-label="Unterpunkt ${idx + 1} ein-/ausklappen">▾</button>
         <span class="num">${idx + 1}</span>
         <input class="item-title" placeholder="Unterpunkt ${idx + 1}" autocomplete="off" enterkeyhint="next">
         <button type="button" class="item-menu-btn" aria-label="Aktionen für Unterpunkt ${idx + 1}">⋮</button>
       </div>
-      <textarea class="item-text autogrow" rows="2" placeholder="Text …"></textarea>
-      <div class="photos" hidden></div>
-      <div class="audios" hidden></div>
-      <div class="item-tools">
-        <button type="button" class="tool-btn" data-act="photo"><span aria-hidden="true">📷</span> Foto</button>
-        <button type="button" class="tool-btn" data-act="record"><span aria-hidden="true">🎤</span> Sprachnotiz</button>
+      <div class="item-summary"></div>
+      <div class="item-body">
+        <textarea class="item-text autogrow" rows="2" placeholder="Text …"></textarea>
+        <div class="photos" hidden></div>
+        <div class="audios" hidden></div>
+        <div class="item-tools">
+          <button type="button" class="tool-btn" data-act="photo"><span aria-hidden="true">📷</span> Foto</button>
+          <button type="button" class="tool-btn" data-act="record"><span aria-hidden="true">🎤</span> Sprachnotiz</button>
+        </div>
       </div>
     </section>`).join('');
 
@@ -387,6 +393,7 @@ function renderItems() {
     const ta = el.querySelector('.item-text');
     ta.value = item.text;
     renderAttachments(item.id);
+    applyFold(item.id);
     requestAnimationFrame(() => autogrow(ta));
   });
   if (recorder && recTarget) {
@@ -423,6 +430,42 @@ function renderAttachments(itemId) {
     const url = await fileUrl(row.dataset.file).catch(() => null);
     if (url) fixDuration(row.querySelector('audio')).src = url;
   });
+  updateSummary(itemId);
+}
+
+/* ---------- Ein-/Ausklappen (Zustand bleibt auf diesem Gerät gespeichert) ---------- */
+
+const FOLD_KEY = 'collapsedItems';
+let collapsed;
+try { collapsed = new Set(JSON.parse(localStorage.getItem(FOLD_KEY) || '[]')); } catch { collapsed = new Set(); }
+function saveFold() {
+  try { localStorage.setItem(FOLD_KEY, JSON.stringify([...collapsed].slice(-2000))); } catch { /* egal */ }
+}
+
+function updateSummary(itemId) {
+  const item = findItem(itemId);
+  const el = itemEl(itemId);
+  if (!item || !el) return;
+  const p = item.attachments.filter(a => a.kind === 'photo').length;
+  const a = item.attachments.filter(a => a.kind === 'audio').length;
+  const text = item.text.trim().replace(/\s+/g, ' ');
+  const parts = [p ? `📷 ${p}` : '', a ? `🎤 ${a}` : '', text].filter(Boolean);
+  el.querySelector('.item-summary').textContent = parts.join(' · ') || 'leer – antippen zum Öffnen';
+}
+
+function applyFold(itemId) {
+  const el = itemEl(itemId);
+  if (!el) return;
+  const isCollapsed = collapsed.has(itemId);
+  el.classList.toggle('collapsed', isCollapsed);
+  el.querySelector('.fold-btn').setAttribute('aria-expanded', String(!isCollapsed));
+  if (!isCollapsed) autogrow(el.querySelector('.item-text'));
+}
+
+function setFold(itemId, collapse) {
+  if (collapse) collapsed.add(itemId); else collapsed.delete(itemId);
+  saveFold();
+  applyFold(itemId);
 }
 
 /** Chrome kennt bei eigenen Aufnahmen die Länge erst nach einmaligem Durchspulen – das hier holt es nach. */
@@ -439,7 +482,7 @@ function fixDuration(audio) {
 }
 
 function isEmptyReport(r) {
-  return !r.title.trim() && !r.notes.trim() &&
+  return !r.title.trim() && !r.notes.trim() && !r.place.trim() &&
     r.items.every(i => !i.title.trim() && !i.text.trim() && i.attachments.length === 0);
 }
 
@@ -479,6 +522,10 @@ $('#r-date').addEventListener('change', e => {
   current.date = e.target.value;
   scheduleSave();
 });
+$('#r-place').addEventListener('input', e => { current.place = e.target.value; scheduleSave(); });
+$('#r-place').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); $('#r-notes').focus(); }
+});
 $('#r-notes').addEventListener('input', e => { current.notes = e.target.value; autogrow(e.target); scheduleSave(); });
 $('#r-title').addEventListener('keydown', e => {
   if (e.key === 'Enter') { e.preventDefault(); $('#r-notes').focus(); }
@@ -489,7 +536,7 @@ $('#items').addEventListener('input', e => {
   if (!el) return;
   const item = findItem(el.dataset.id);
   if (e.target.classList.contains('item-title')) item.title = e.target.value;
-  if (e.target.classList.contains('item-text')) { item.text = e.target.value; autogrow(e.target); }
+  if (e.target.classList.contains('item-text')) { item.text = e.target.value; autogrow(e.target); updateSummary(item.id); }
   scheduleSave();
 });
 $('#items').addEventListener('keydown', e => {
@@ -502,6 +549,7 @@ $('#items').addEventListener('keydown', e => {
 $('#add-item').addEventListener('click', () => {
   const item = newItem();
   current.items.push(item);
+  collapsed.delete(item.id);
   renderItems();
   dirty = true;
   flushSave(true);
@@ -518,6 +566,16 @@ $('#items').addEventListener('click', async e => {
   const el = e.target.closest('.item');
   if (!el) return;
   const id = el.dataset.id;
+
+  if (e.target.closest('.fold-btn')) {
+    setFold(id, !collapsed.has(id));
+    return;
+  }
+  if (e.target.closest('.item-summary')) {
+    setFold(id, false);
+    el.querySelector('.item-text').focus();
+    return;
+  }
 
   if (e.target.closest('.item-menu-btn')) {
     e.stopPropagation();
@@ -774,6 +832,7 @@ async function startRecording(itemId) {
   $('#rec-label').textContent = 'Aufnahme für ' + itemLabel(current.items[idx], idx);
   $('#rec-time').textContent = '0:00';
   $('#recording').hidden = false;
+  setFold(itemId, false);
   itemEl(itemId).classList.add('recording-target');
   recTimer = setInterval(() => {
     const sec = (Date.now() - recStart) / 1000;
@@ -850,7 +909,7 @@ async function buildReportHtml(r, { forPrint = false } = {}) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escapeHtml(title)} – ${formatDay(r.date)}</title>
+<title>${escapeHtml(title)} – ${formatDay(r.date)}${r.place.trim() ? ' – ' + escapeHtml(r.place.trim()) : ''}</title>
 <style>
   body { font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #1c1c22; margin: 0; background: #fff; }
   main { max-width: 820px; margin: 0 auto; padding: 24px 20px 40px; }
@@ -880,7 +939,7 @@ async function buildReportHtml(r, { forPrint = false } = {}) {
 <main>
   <header>
     <h1>${escapeHtml(title)}</h1>
-    <div class="date">${formatLongDay(r.date)}</div>
+    <div class="date">${formatLongDay(r.date)}${r.place.trim() ? ` · 📍 ${escapeHtml(r.place.trim())}` : ''}</div>
   </header>
   ${r.notes.trim() ? `<div class="notes">${escapeHtml(r.notes.trim())}</div>` : ''}
   ${parts.join('\n')}
@@ -1048,6 +1107,9 @@ const actions = {
       });
     }
   },
+
+  'collapse-all'() { current.items.forEach(i => setFold(i.id, true)); },
+  'expand-all'() { current.items.forEach(i => setFold(i.id, false)); },
 
   'item-up'() { moveItem(menuItemId, -1); },
   'item-down'() { moveItem(menuItemId, 1); },

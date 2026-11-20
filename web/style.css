@@ -224,3 +224,23 @@ mark { background: rgba(255, 179, 0, .4); color: inherit; border-radius: 2px; }
 
 .rec-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
 #recording .tool-btn { flex: none; }
+
+/* Ort */
+.place-row input { flex: 1; min-width: 0; }
+
+/* Ein-/Ausklappen */
+.fold-btn {
+  flex: none; width: 32px; height: 32px; border: 0; border-radius: 50%; background: none;
+  color: var(--muted); font-size: 16px; line-height: 1; padding: 0;
+  transition: transform .15s;
+}
+.fold-btn:active { background: var(--border); }
+.item.collapsed .fold-btn { transform: rotate(-90deg); }
+.item-summary {
+  display: none; margin: 2px 0 0 36px; color: var(--muted); font-size: 14px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer;
+}
+.item.collapsed .item-summary { display: block; }
+.item.collapsed .item-body { display: none; }
+.item.collapsed { padding-bottom: 10px; }
+.note .place { color: var(--muted); font-size: 13px; }
