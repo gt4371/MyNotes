@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Notizen</string>
+    <string name="new_note">Neue Notiz</string>
+    <string name="search_hint">Notizen durchsuchen</string>
+    <string name="empty">Noch keine Notizen.\nTippe auf „+“, um eine anzulegen.</string>
+    <string name="no_results">Keine Treffer.</string>
+    <string name="title_hint">Titel</string>
+    <string name="content_hint">Notiz schreiben …</string>
+    <string name="untitled">(ohne Titel)</string>
+    <string name="delete">Löschen</string>
+    <string name="share">Teilen</string>
+    <string name="cancel">Abbrechen</string>
+    <string name="delete_question">Diese Notiz löschen?</string>
+    <string name="deleted">Notiz gelöscht</string>
+    <string name="edit_title">Notiz</string>
+</resources>
