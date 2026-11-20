@@ -268,3 +268,15 @@ mark { background: rgba(255, 179, 0, .4); color: inherit; border-radius: 2px; }
 .item-tools .tool-btn { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .section-title { cursor: pointer; user-select: none; }
 .menu-version { margin: 0 16px 6px; color: var(--muted); font-size: 12px; }
+
+/* Titelbereich ein-/ausklappen */
+.head-row { display: flex; align-items: center; gap: 2px; padding-left: 8px; }
+.head-row #r-title { flex: 1; min-width: 0; padding-left: 4px; }
+.head-row .fold-btn { margin-top: 8px; }
+.report-head.collapsed .fold-btn { transform: rotate(-90deg); }
+.head-summary {
+  display: none; padding: 0 16px 0 46px; color: var(--muted); font-size: 14px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer;
+}
+.report-head.collapsed .head-summary { display: block; }
+.report-head.collapsed .head-body { display: none; }

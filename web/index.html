@@ -36,7 +36,12 @@
     </header>
     <div class="editor">
       <div id="report-head" class="report-head" data-id="__report">
-        <input id="r-title" class="title-input" placeholder="Titel des Berichts" autocomplete="off" enterkeyhint="next">
+        <div class="head-row">
+          <button id="head-fold" type="button" class="fold-btn" aria-label="Titelbereich ein-/ausklappen" aria-expanded="true">▾</button>
+          <input id="r-title" class="title-input" placeholder="Titel des Berichts" autocomplete="off" enterkeyhint="next">
+        </div>
+        <div id="head-summary" class="head-summary"></div>
+        <div class="head-body">
         <label class="date-row">
           <span>Datum</span>
           <input id="r-date" type="date">
@@ -48,6 +53,7 @@
         <textarea id="r-notes" class="autogrow notes-input" rows="2" placeholder="Notizen zum Bericht …"></textarea>
         <div class="photos" hidden></div>
         <div class="audios" hidden></div>
+        </div>
       </div>
 
       <h2 class="section-title">

@@ -7,7 +7,7 @@
    Die Foto-/Audiodaten selbst liegen getrennt im Store "files" (Schlüssel = Anhang-id).
    ====================================================================== */
 
-const APP_VERSION = '1.8 (20.11.2026)';
+const APP_VERSION = '1.9 (20.11.2026)';
 const DB_NAME = 'notizen';
 let dbPromise = null;
 
@@ -357,6 +357,7 @@ function showEditor(id) {
   updateStamp();
   renderItems();
   renderAttachments(REPORT);
+  applyHeadFold();
 
   $('#list-view').hidden = true;
   $('#edit-view').hidden = false;
@@ -471,6 +472,39 @@ function applyFold(itemId) {
   el.querySelector('.fold-btn').setAttribute('aria-expanded', String(!isCollapsed));
   if (!isCollapsed) autogrow(el.querySelector('.item-text'));
 }
+
+/* Titelbereich des Berichts (Zustand pro Bericht auf dem Gerät gespeichert) */
+const headKey = () => 'head:' + current.id;
+
+function updateHeadSummary() {
+  if (!current) return;
+  const notes = current.notes.trim().replace(/\s+/g, ' ');
+  const p = countOf(current, 'photo') - current.items.reduce((n, i) => n + i.attachments.filter(a => a.kind === 'photo').length, 0);
+  const parts = [
+    current.date ? formatDay(current.date) : '',
+    current.place.trim() ? '📍 ' + current.place.trim() : '',
+    p > 0 ? `📷 ${p}` : '',
+    notes,
+  ].filter(Boolean);
+  $('#head-summary').textContent = parts.join(' · ');
+}
+
+function applyHeadFold() {
+  const isCollapsed = collapsed.has(headKey());
+  $('#report-head').classList.toggle('collapsed', isCollapsed);
+  $('#head-fold').setAttribute('aria-expanded', String(!isCollapsed));
+  updateHeadSummary();
+  if (!isCollapsed) autogrow($('#r-notes'));
+}
+
+function setHeadFold(collapse) {
+  if (collapse) collapsed.add(headKey()); else collapsed.delete(headKey());
+  saveFold();
+  applyHeadFold();
+}
+
+$('#head-fold').addEventListener('click', () => setHeadFold(!collapsed.has(headKey())));
+$('#head-summary').addEventListener('click', () => setHeadFold(false));
 
 function setFold(itemId, collapse) {
   if (collapse) collapsed.add(itemId); else collapsed.delete(itemId);
@@ -603,6 +637,7 @@ $('#edit-view .editor').addEventListener('click', async e => {
   const id = el.dataset.id;
 
   if (e.target.closest('.fold-btn')) {
+    if (id === REPORT) return; // Titelbereich hat einen eigenen Handler
     setFold(id, !collapsed.has(id));
     return;
   }
