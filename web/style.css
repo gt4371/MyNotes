@@ -255,3 +255,16 @@ mark { background: rgba(255, 179, 0, .4); color: inherit; border-radius: 2px; }
 .section-toggle .arrow { display: inline-block; transition: transform .15s; }
 .section-toggle[aria-expanded="false"] .arrow { transform: rotate(-90deg); }
 .section-toggle .count { font-weight: 400; text-transform: none; letter-spacing: 0; }
+
+/* Kopfbereich des Berichts als eine Karte (inkl. Fotos/Sprachnotizen zu den Notizen) */
+.report-head { background: var(--card); border-radius: 12px; box-shadow: var(--shadow); padding-bottom: 12px; }
+.report-head #r-title, .report-head .date-row, .report-head .notes-input {
+  background: transparent; box-shadow: none; border-radius: 0;
+}
+.report-head .notes-input { padding-bottom: 8px; }
+.report-head .photos, .report-head .audios, .report-head .item-tools { margin: 0 12px 10px; }
+.report-head .item-tools { margin-bottom: 0; }
+.report-head.recording-target { outline: 2px solid var(--danger); }
+.item-tools .tool-btn { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.section-title { cursor: pointer; user-select: none; }
+.menu-version { margin: 0 16px 6px; color: var(--muted); font-size: 12px; }

@@ -7,6 +7,7 @@
    Die Foto-/Audiodaten selbst liegen getrennt im Store "files" (Schlüssel = Anhang-id).
    ====================================================================== */
 
+const APP_VERSION = '1.7 (20.11.2026)';
 const DB_NAME = 'notizen';
 let dbPromise = null;
 
@@ -73,14 +74,16 @@ function isoDate(ms) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+const normAtts = list => Array.isArray(list)
+  ? list.filter(a => a && a.id && (a.kind === 'photo' || a.kind === 'audio')).map(a => ({ ...a, id: String(a.id) }))
+  : [];
+
 function normalizeItem(i) {
   return {
     id: String(i.id || newId()),
     title: String(i.title || ''),
     text: String(i.text || ''),
-    attachments: Array.isArray(i.attachments)
-      ? i.attachments.filter(a => a && a.id && (a.kind === 'photo' || a.kind === 'audio')).map(a => ({ ...a, id: String(a.id) }))
-      : [],
+    attachments: normAtts(i.attachments),
   };
 }
 
@@ -92,6 +95,7 @@ function normalize(r) {
     date: /^\d{4}-\d{2}-\d{2}$/.test(r.date || '') ? r.date : isoDate(created),
     place: String(r.place || ''),
     notes: String(r.notes || ''),
+    attachments: normAtts(r.attachments),   // Fotos/Sprachnotizen direkt zu den Notizen des Berichts
     created,
     updated: Number(r.updated) || created,
     items: Array.isArray(r.items) ? r.items.map(normalizeItem) : [],
@@ -113,7 +117,7 @@ function noteToReport(n) {
 }
 
 const clone = r => normalize(JSON.parse(JSON.stringify(r)));
-const allAttachments = r => r.items.flatMap(i => i.attachments);
+const allAttachments = r => [...(r.attachments || []), ...r.items.flatMap(i => i.attachments)];
 const newItem = () => ({ id: newId(), title: '', text: '', attachments: [] });
 
 let persistRequested = false;
@@ -219,7 +223,8 @@ function extFor(type) {
 
 function attachmentFileName(r, itemIndex, att, attIndex) {
   const label = att.kind === 'photo' ? 'Foto' : 'Sprachnotiz';
-  return `${safeFileName(displayTitle(r))} - Punkt ${itemIndex + 1} ${label} ${attIndex + 1}.${extFor(att.type)}`;
+  const where = itemIndex < 0 ? 'Notizen' : `Punkt ${itemIndex + 1}`;
+  return `${safeFileName(displayTitle(r))} - ${where} ${label} ${attIndex + 1}.${extFor(att.type)}`;
 }
 
 function reportFileName(r) {
@@ -351,6 +356,7 @@ function showEditor(id) {
   $('#edit-heading').textContent = existing ? 'Bericht' : 'Neuer Bericht';
   updateStamp();
   renderItems();
+  renderAttachments(REPORT);
 
   $('#list-view').hidden = true;
   $('#edit-view').hidden = false;
@@ -363,8 +369,10 @@ function updateStamp() {
   $('#r-updated').textContent = reports.has(current.id) ? 'Zuletzt geändert: ' + formatStamp(current.updated) : '';
 }
 
-const findItem = id => current.items.find(i => i.id === id);
-const itemEl = id => document.querySelector(`.item[data-id="${CSS.escape(id)}"]`);
+/** Besitzer von Anhängen: ein Unterpunkt (id) oder die Notizen des Berichts (REPORT) */
+const REPORT = '__report';
+const findItem = id => (id === REPORT ? current : current.items.find(i => i.id === id));
+const itemEl = id => (id === REPORT ? $('#report-head') : document.querySelector(`.item[data-id="${CSS.escape(id)}"]`));
 
 function renderItems() {
   $('#items').innerHTML = current.items.map((item, idx) => `
@@ -381,8 +389,9 @@ function renderItems() {
         <div class="photos" hidden></div>
         <div class="audios" hidden></div>
         <div class="item-tools">
-          <button type="button" class="tool-btn" data-act="photo"><span aria-hidden="true">📷</span> Foto</button>
-          <button type="button" class="tool-btn" data-act="record"><span aria-hidden="true">🎤</span> Sprachnotiz</button>
+          <button type="button" class="tool-btn" data-act="camera"><span aria-hidden="true">📷</span> Foto</button>
+          <button type="button" class="tool-btn" data-act="gallery"><span aria-hidden="true">🖼</span> Galerie</button>
+          <button type="button" class="tool-btn" data-act="record"><span aria-hidden="true">🎤</span> Sprache</button>
         </div>
       </div>
     </section>`).join('');
@@ -446,7 +455,7 @@ function saveFold() {
 function updateSummary(itemId) {
   const item = findItem(itemId);
   const el = itemEl(itemId);
-  if (!item || !el) return;
+  if (!item || !el || !el.querySelector('.item-summary')) return;
   const p = item.attachments.filter(a => a.kind === 'photo').length;
   const a = item.attachments.filter(a => a.kind === 'audio').length;
   const text = item.text.trim().replace(/\s+/g, ' ');
@@ -488,7 +497,7 @@ function setFoldAll(collapse) {
   updateFoldAll();
 }
 
-$('#fold-all').addEventListener('click', () => {
+$('.section-title').addEventListener('click', () => {
   if (!current || !current.items.length) return;
   // Ist mindestens einer offen → alle einklappen, sonst alle ausklappen
   setFoldAll(current.items.some(i => !collapsed.has(i.id)));
@@ -508,7 +517,7 @@ function fixDuration(audio) {
 }
 
 function isEmptyReport(r) {
-  return !r.title.trim() && !r.notes.trim() && !r.place.trim() &&
+  return !r.title.trim() && !r.notes.trim() && !r.place.trim() && r.attachments.length === 0 &&
     r.items.every(i => !i.title.trim() && !i.text.trim() && i.attachments.length === 0);
 }
 
@@ -588,8 +597,8 @@ $('#add-item').addEventListener('click', () => {
 
 let menuItemId = null;
 
-$('#items').addEventListener('click', async e => {
-  const el = e.target.closest('.item');
+$('#edit-view .editor').addEventListener('click', async e => {
+  const el = e.target.closest('.item, .report-head');
   if (!el) return;
   const id = el.dataset.id;
 
@@ -618,10 +627,12 @@ $('#items').addEventListener('click', async e => {
   }
 
   const act = e.target.closest('[data-act]');
-  if (act && act.dataset.act === 'photo') {
+  if (act && (act.dataset.act === 'camera' || act.dataset.act === 'gallery')) {
+    // „Foto“ öffnet direkt die Kamera, „Galerie“ die Bildauswahl (mehrere möglich)
     photoTarget = id;
-    $('#photo-file').value = '';
-    $('#photo-file').click();
+    const input = act.dataset.act === 'camera' ? $('#camera-file') : $('#photo-file');
+    input.value = '';
+    input.click();
     return;
   }
   if (act && act.dataset.act === 'record') {
@@ -729,7 +740,7 @@ async function shrinkPhoto(file) {
   }
 }
 
-$('#photo-file').addEventListener('change', async e => {
+async function onPhotosChosen(e) {
   const files = [...e.target.files].filter(f => f.type.startsWith('image/') || !f.type);
   const target = photoTarget;
   if (!files.length || !current || !target) return;
@@ -739,7 +750,9 @@ $('#photo-file').addEventListener('change', async e => {
   if (await addAttachments(target, list)) {
     toast(files.length === 1 ? 'Foto hinzugefügt' : `${files.length} Fotos hinzugefügt`);
   }
-});
+}
+$('#photo-file').addEventListener('change', onPhotosChosen);
+$('#camera-file').addEventListener('change', onPhotosChosen);
 
 let viewer = null; // { itemId, fileId }
 
@@ -768,7 +781,8 @@ $('#viewer-img').addEventListener('click', closeViewer);
 async function viewerFile() {
   if (!viewer) return null;
   const itemIndex = current.items.findIndex(i => i.id === viewer.itemId);
-  const item = current.items[itemIndex];
+  const item = findItem(viewer.itemId);
+  if (!item) return null;
   const photos = item.attachments.filter(a => a.kind === 'photo');
   const att = photos.find(a => a.id === viewer.fileId);
   const rec = await dbGetFile(viewer.fileId);
@@ -855,10 +869,10 @@ async function startRecording(itemId) {
   recorder.start(1000);
   recStart = Date.now();
   const idx = current.items.findIndex(i => i.id === itemId);
-  $('#rec-label').textContent = 'Aufnahme für ' + itemLabel(current.items[idx], idx);
+  $('#rec-label').textContent = 'Aufnahme für ' + (itemId === REPORT ? 'Notizen' : itemLabel(current.items[idx], idx));
   $('#rec-time').textContent = '0:00';
   $('#recording').hidden = false;
-  setFold(itemId, false);
+  if (itemId !== REPORT) setFold(itemId, false);
   itemEl(itemId).classList.add('recording-target');
   recTimer = setInterval(() => {
     const sec = (Date.now() - recStart) / 1000;
@@ -904,28 +918,33 @@ window.addEventListener('pagehide', () => flushSave());
    Export eines ganzen Berichts (eine HTML-Datei mit eingebetteten Fotos/Audio)
    ====================================================================== */
 
+/** Fotos und Sprachnotizen als HTML (Daten eingebettet) */
+async function mediaHtml(attachments, forPrint) {
+  const photos = [];
+  const audios = [];
+  for (const a of attachments) {
+    const rec = await dbGetFile(a.id);
+    if (!rec) continue;
+    const data = await blobToDataUrl(rec.blob);
+    if (a.kind === 'photo') photos.push(`<figure><img src="${data}" alt="Foto"></figure>`);
+    else {
+      const len = a.duration ? ` (${formatDuration(a.duration)})` : '';
+      audios.push(`<div class="audio"><span>🎤 Sprachnotiz ${audios.length + 1}${len}</span>` +
+        (forPrint ? '' : `<audio controls src="${data}"></audio>`) + '</div>');
+    }
+  }
+  return (photos.length ? `<div class="photos">${photos.join('')}</div>` : '') + audios.join('');
+}
+
 async function buildReportHtml(r, { forPrint = false } = {}) {
   const parts = [];
+  const headMedia = await mediaHtml(r.attachments, forPrint);
   for (const [idx, item] of r.items.entries()) {
-    const photos = [];
-    const audios = [];
-    for (const a of item.attachments) {
-      const rec = await dbGetFile(a.id);
-      if (!rec) continue;
-      const data = await blobToDataUrl(rec.blob);
-      if (a.kind === 'photo') photos.push(`<figure><img src="${data}" alt="Foto"></figure>`);
-      else {
-        const len = a.duration ? ` (${formatDuration(a.duration)})` : '';
-        audios.push(`<div class="audio"><span>🎤 Sprachnotiz ${audios.length + 1}${len}</span>` +
-          (forPrint ? '' : `<audio controls src="${data}"></audio>`) + '</div>');
-      }
-    }
     const title = item.title.trim() || `Unterpunkt ${idx + 1}`;
     parts.push(`<section class="item">
       <h2><span class="num">${idx + 1}</span> ${escapeHtml(title)}</h2>
       ${item.text.trim() ? `<div class="text">${escapeHtml(item.text.trim())}</div>` : ''}
-      ${photos.length ? `<div class="photos">${photos.join('')}</div>` : ''}
-      ${audios.join('')}
+      ${await mediaHtml(item.attachments, forPrint)}
     </section>`);
   }
 
@@ -942,6 +961,7 @@ async function buildReportHtml(r, { forPrint = false } = {}) {
   header { border-bottom: 3px solid #3949ab; padding-bottom: 12px; margin-bottom: 18px; }
   h1 { font-size: 26px; margin: 0 0 4px; }
   .date { color: #555; }
+  .head-media { margin: 0 0 20px; }
   .notes { white-space: pre-wrap; background: #f3f4fa; border-left: 4px solid #3949ab; padding: 10px 14px; margin: 0 0 20px; border-radius: 4px; }
   .item { margin: 0 0 22px; padding-bottom: 16px; border-bottom: 1px solid #ddd; break-inside: avoid-page; }
   .item:last-of-type { border-bottom: 0; }
@@ -968,6 +988,7 @@ async function buildReportHtml(r, { forPrint = false } = {}) {
     <div class="date">${formatLongDay(r.date)}${r.place.trim() ? ` · 📍 ${escapeHtml(r.place.trim())}` : ''}</div>
   </header>
   ${r.notes.trim() ? `<div class="notes">${escapeHtml(r.notes.trim())}</div>` : ''}
+  ${headMedia ? `<div class="head-media">${headMedia}</div>` : ''}
   ${parts.join('\n')}
   <footer>Erstellt am ${dateFmt.format(new Date())}, ${timeFmt.format(new Date())} · ${r.items.length} Unterpunkt${r.items.length === 1 ? '' : 'e'}</footer>
 </main>
@@ -1022,7 +1043,8 @@ function toggleMenu(menu, show) {
 $('#menu-btn').addEventListener('click', async e => {
   e.stopPropagation();
   const last = localStorage.getItem('lastBackup');
-  const info = 'Letzte Sicherung: ' + (last ? formatStamp(Number(last)) : 'noch nie') + '\nBerichte: ' + reports.size;
+  const info = 'Letzte Sicherung: ' + (last ? formatStamp(Number(last)) : 'noch nie') + '\nBerichte: ' + reports.size +
+    '\nApp-Version ' + APP_VERSION;
   toggleMenu($('#main-menu'));
   $('#backup-info').textContent = info;
   if (navigator.storage && navigator.storage.estimate) {
@@ -1054,18 +1076,19 @@ const actions = {
     const list = [...reports.values()].sort((a, b) => b.date.localeCompare(a.date));
     const out = [];
     let missing = 0;
+    const withData = async list => {
+      const atts = [];
+      for (const a of list) {
+        const rec = await dbGetFile(a.id);
+        if (rec) atts.push({ ...a, data: await blobToDataUrl(rec.blob) });
+        else missing++;
+      }
+      return atts;
+    };
     for (const r of list) {
       const items = [];
-      for (const item of r.items) {
-        const atts = [];
-        for (const a of item.attachments) {
-          const rec = await dbGetFile(a.id);
-          if (rec) atts.push({ ...a, data: await blobToDataUrl(rec.blob) });
-          else missing++;
-        }
-        items.push({ ...item, attachments: atts });
-      }
-      out.push({ ...r, items });
+      for (const item of r.items) items.push({ ...item, attachments: await withData(item.attachments) });
+      out.push({ ...r, attachments: await withData(r.attachments), items });
     }
     const data = { app: 'berichte', version: 3, exported: new Date().toISOString(), reports: out };
     downloadBlob(`berichte-sicherung-${isoDate(Date.now())}.json`,
@@ -1150,19 +1173,23 @@ async function importEntry(raw, fileRecs) {
   const base = isOldNote
     ? { ...noteToReport({ ...raw, attachments: [] }), items: [{ id: newId(), title: '', text: raw.content || '', attachments: raw.attachments || [] }] }
     : raw;
-  const r = normalize({ ...base, items: [] });
-  for (const rawItem of (Array.isArray(base.items) ? base.items : [])) {
-    const item = normalizeItem({ ...rawItem, attachments: [] });
-    for (const a of (Array.isArray(rawItem.attachments) ? rawItem.attachments : [])) {
+  const r = normalize({ ...base, attachments: [], items: [] });
+  const takeAtts = async (list, target) => {
+    for (const a of (Array.isArray(list) ? list : [])) {
       if (!a || !a.data || (a.kind !== 'photo' && a.kind !== 'audio')) continue;
       try {
         const blob = await dataUrlToBlob(a.data);
         const { data, ...meta } = a;
         meta.id = String(meta.id || newId());
         fileRecs.push({ id: meta.id, blob });
-        item.attachments.push(meta);
+        target.push(meta);
       } catch { /* defekter Anhang – überspringen */ }
     }
+  };
+  if (!isOldNote) await takeAtts(base.attachments, r.attachments);
+  for (const rawItem of (Array.isArray(base.items) ? base.items : [])) {
+    const item = normalizeItem({ ...rawItem, attachments: [] });
+    await takeAtts(rawItem.attachments, item.attachments);
     r.items.push(item);
   }
   return r;

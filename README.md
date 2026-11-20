@@ -22,9 +22,10 @@ Adresse: **https://gt4371.github.io/MyNotes/**
 3. Fertig – ab jetzt startet „Berichte“ wie eine App, auch ohne Internet.
 
 **Aufbau eines Berichts**
-- **Titel**, **Datum** (vorbelegt mit heute), **Ort** und **Notizen** zum ganzen Bericht
-- beliebig viele **Unterpunkte**, jeweils mit Überschrift, **Text**, **📷 Fotos** (Kamera oder Galerie)
-  und **🎤 Sprachnotizen**; über ⋮ am Unterpunkt nach oben/unten verschieben oder löschen
+- **Titel**, **Datum** (vorbelegt mit heute), **Ort** und **Notizen** zum ganzen Bericht –
+  auch die Notizen können direkt **Fotos** und **Sprachnotizen** haben
+- beliebig viele **Unterpunkte**, jeweils mit Überschrift, **Text**, Fotos und **🎤 Sprachnotizen**
+- **📷 Foto** öffnet direkt die Kamera, **🖼 Galerie** wählt vorhandene Bilder (mehrere auf einmal); über ⋮ am Unterpunkt nach oben/unten verschieben oder löschen
 - Unterpunkte mit ▾/▸ **ein- und ausklappen** (eingeklappt: Kurzinfo mit 📷/🎤 und Textanfang, antippen öffnet);
   Tippen auf die Überschrift **„Unterpunkte“** klappt alle ein (nochmal: alle aus), ebenso im Bericht-Menü ⋮;
   der Zustand bleibt auf dem Gerät gespeichert
@@ -43,7 +44,7 @@ Adresse: **https://gt4371.github.io/MyNotes/**
 mit einem Unterpunkt.
 
 ⚠️ Die Daten liegen im Browser. Wer in Chrome „Browserdaten löschen“ inkl. Website-Daten wählt, löscht sie mit –
-deshalb regelmäßig eine **Sicherung exportieren**. Das Menü zeigt, wann zuletzt gesichert wurde.
+deshalb regelmäßig eine **Sicherung exportieren**. Das Menü zeigt, wann zuletzt gesichert wurde, und die App-Version.
 
 Veröffentlicht wird automatisch per GitHub Actions („Web-App veröffentlichen“) bei jeder Änderung in `web/`.
 Nach Änderungen an den App-Dateien in `web/sw.js` die `VERSION` erhöhen.

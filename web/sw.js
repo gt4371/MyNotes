@@ -1,6 +1,6 @@
 // Offline-Unterstützung: App-Dateien werden zwischengespeichert.
 // Bei Änderungen an den Dateien VERSION erhöhen, damit alle Geräte die neue Fassung laden.
-const VERSION = 'berichte-v5';
+const VERSION = 'berichte-v6';
 const FILES = [
   './',
   'index.html',
@@ -28,7 +28,8 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET' || new URL(event.request.url).origin !== location.origin) return;
   event.respondWith(
-    fetch(event.request)
+    // cache: 'no-cache' → immer beim Server nachfragen, damit nie alte und neue Dateien gemischt werden
+    fetch(event.request.url, { cache: 'no-cache', credentials: 'same-origin' })
       .then(response => {
         if (response.ok) {
           const copy = response.clone();

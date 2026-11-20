@@ -35,16 +35,25 @@
       <button id="report-menu-btn" class="icon-btn" aria-label="Weitere Aktionen" aria-haspopup="true">⋮</button>
     </header>
     <div class="editor">
-      <input id="r-title" class="title-input" placeholder="Titel des Berichts" autocomplete="off" enterkeyhint="next">
-      <label class="date-row">
-        <span>Datum</span>
-        <input id="r-date" type="date">
-      </label>
-      <label class="date-row place-row">
-        <span>Ort</span>
-        <input id="r-place" type="text" placeholder="z. B. Talstation Sölden" autocomplete="off" enterkeyhint="next">
-      </label>
-      <textarea id="r-notes" class="autogrow notes-input" rows="2" placeholder="Notizen zum Bericht …"></textarea>
+      <div id="report-head" class="report-head" data-id="__report">
+        <input id="r-title" class="title-input" placeholder="Titel des Berichts" autocomplete="off" enterkeyhint="next">
+        <label class="date-row">
+          <span>Datum</span>
+          <input id="r-date" type="date">
+        </label>
+        <label class="date-row place-row">
+          <span>Ort</span>
+          <input id="r-place" type="text" placeholder="z. B. Talstation Sölden" autocomplete="off" enterkeyhint="next">
+        </label>
+        <textarea id="r-notes" class="autogrow notes-input" rows="2" placeholder="Notizen zum Bericht …"></textarea>
+        <div class="photos" hidden></div>
+        <div class="audios" hidden></div>
+        <div class="item-tools">
+          <button type="button" class="tool-btn" data-act="camera"><span aria-hidden="true">📷</span> Foto</button>
+          <button type="button" class="tool-btn" data-act="gallery"><span aria-hidden="true">🖼</span> Galerie</button>
+          <button type="button" class="tool-btn" data-act="record"><span aria-hidden="true">🎤</span> Sprache</button>
+        </div>
+      </div>
 
       <h2 class="section-title">
         <button id="fold-all" class="section-toggle" type="button" aria-expanded="true">
@@ -98,6 +107,7 @@
     <button data-action="item-delete" role="menuitem" class="danger">Unterpunkt löschen</button>
   </div>
 
+  <input id="camera-file" type="file" accept="image/*" capture="environment" hidden>
   <input id="photo-file" type="file" accept="image/*" multiple hidden>
   <input id="import-file" type="file" accept=".json,.txt,application/json,text/plain" multiple hidden>
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
