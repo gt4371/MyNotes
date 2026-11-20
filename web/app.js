@@ -2,12 +2,12 @@
 
 /* ======================================================================
    Datenmodell
-   Bericht: { id, title, date (JJJJ-MM-TT), place, notes, created, updated, items: [Unterpunkt] }
+   Bericht: { id, title, date (JJJJ-MM-TT), place, people, notes, created, updated, items: [Unterpunkt] }
    Unterpunkt: { id, title, text, attachments: [{ id, kind: 'photo'|'audio', type, created, duration? }] }
    Die Foto-/Audiodaten selbst liegen getrennt im Store "files" (Schlüssel = Anhang-id).
    ====================================================================== */
 
-const APP_VERSION = '1.9 (20.11.2026)';
+const APP_VERSION = '1.10 (20.11.2026)';
 const DB_NAME = 'notizen';
 let dbPromise = null;
 
@@ -94,6 +94,7 @@ function normalize(r) {
     title: String(r.title || ''),
     date: /^\d{4}-\d{2}-\d{2}$/.test(r.date || '') ? r.date : isoDate(created),
     place: String(r.place || ''),
+    people: String(r.people || ''),
     notes: String(r.notes || ''),
     attachments: normAtts(r.attachments),   // Fotos/Sprachnotizen direkt zu den Notizen des Berichts
     created,
@@ -277,7 +278,7 @@ function autogrow(el) {
 
 function matches(r, q) {
   if (!q) return true;
-  const hay = [r.title, r.place, r.notes, ...r.items.flatMap(i => [i.title, i.text])].join('\n').toLowerCase();
+  const hay = [r.title, r.place, r.people, r.notes, ...r.items.flatMap(i => [i.title, i.text])].join('\n').toLowerCase();
   return hay.includes(q);
 }
 
@@ -352,6 +353,7 @@ function showEditor(id) {
   $('#r-title').value = current.title;
   $('#r-date').value = current.date;
   $('#r-place').value = current.place;
+  $('#r-people').value = current.people;
   $('#r-notes').value = current.notes;
   $('#edit-heading').textContent = existing ? 'Bericht' : 'Neuer Bericht';
   updateStamp();
@@ -363,6 +365,7 @@ function showEditor(id) {
   $('#edit-view').hidden = false;
   window.scrollTo(0, 0);
   autogrow($('#r-notes'));
+  autogrow($('#r-people'));
   if (!existing) $('#r-title').focus();
 }
 
@@ -483,6 +486,7 @@ function updateHeadSummary() {
   const parts = [
     current.date ? formatDay(current.date) : '',
     current.place.trim() ? '📍 ' + current.place.trim() : '',
+    current.people.trim() ? '👥 ' + current.people.trim().replace(/\s*\n+\s*/g, ', ') : '',
     p > 0 ? `📷 ${p}` : '',
     notes,
   ].filter(Boolean);
@@ -494,7 +498,7 @@ function applyHeadFold() {
   $('#report-head').classList.toggle('collapsed', isCollapsed);
   $('#head-fold').setAttribute('aria-expanded', String(!isCollapsed));
   updateHeadSummary();
-  if (!isCollapsed) autogrow($('#r-notes'));
+  if (!isCollapsed) { autogrow($('#r-notes')); autogrow($('#r-people')); }
 }
 
 function setHeadFold(collapse) {
@@ -551,7 +555,7 @@ function fixDuration(audio) {
 }
 
 function isEmptyReport(r) {
-  return !r.title.trim() && !r.notes.trim() && !r.place.trim() && r.attachments.length === 0 &&
+  return !r.title.trim() && !r.notes.trim() && !r.place.trim() && !r.people.trim() && r.attachments.length === 0 &&
     r.items.every(i => !i.title.trim() && !i.text.trim() && i.attachments.length === 0);
 }
 
@@ -593,8 +597,9 @@ $('#r-date').addEventListener('change', e => {
 });
 $('#r-place').addEventListener('input', e => { current.place = e.target.value; scheduleSave(); });
 $('#r-place').addEventListener('keydown', e => {
-  if (e.key === 'Enter') { e.preventDefault(); $('#r-notes').focus(); }
+  if (e.key === 'Enter') { e.preventDefault(); $('#r-people').focus(); }
 });
+$('#r-people').addEventListener('input', e => { current.people = e.target.value; autogrow(e.target); scheduleSave(); });
 $('#r-notes').addEventListener('input', e => { current.notes = e.target.value; autogrow(e.target); scheduleSave(); });
 $('#r-title').addEventListener('keydown', e => {
   if (e.key === 'Enter') { e.preventDefault(); $('#r-notes').focus(); }
@@ -997,6 +1002,7 @@ async function buildReportHtml(r, { forPrint = false } = {}) {
   h1 { font-size: 26px; margin: 0 0 4px; }
   .date { color: #555; }
   .head-media { margin: 0 0 20px; }
+  .people { margin: 0 0 14px; }
   .notes { white-space: pre-wrap; background: #f3f4fa; border-left: 4px solid #3949ab; padding: 10px 14px; margin: 0 0 20px; border-radius: 4px; }
   .item { margin: 0 0 22px; padding-bottom: 16px; border-bottom: 1px solid #ddd; break-inside: avoid-page; }
   .item:last-of-type { border-bottom: 0; }
@@ -1022,6 +1028,7 @@ async function buildReportHtml(r, { forPrint = false } = {}) {
     <h1>${escapeHtml(title)}</h1>
     <div class="date">${formatLongDay(r.date)}${r.place.trim() ? ` · 📍 ${escapeHtml(r.place.trim())}` : ''}</div>
   </header>
+  ${r.people.trim() ? `<div class="people"><strong>Teilnehmer:</strong> ${escapeHtml(r.people.trim().replace(/\s*\n+\s*/g, ', '))}</div>` : ''}
   ${r.notes.trim() ? `<div class="notes">${escapeHtml(r.notes.trim())}</div>` : ''}
   ${headMedia ? `<div class="head-media">${headMedia}</div>` : ''}
   ${parts.join('\n')}

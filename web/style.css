@@ -280,3 +280,11 @@ mark { background: rgba(255, 179, 0, .4); color: inherit; border-radius: 2px; }
 }
 .report-head.collapsed .head-summary { display: block; }
 .report-head.collapsed .head-body { display: none; }
+
+/* Teilnehmer */
+.people-row { align-items: flex-start; }
+.people-row span { padding-top: 7px; }
+.people-row textarea {
+  flex: 1; min-width: 0; font: inherit; color: var(--text); background: var(--bg);
+  border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; resize: none; outline: none;
+}
