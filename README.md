@@ -26,7 +26,8 @@ Adresse: **https://gt4371.github.io/MyNotes/**
 - beliebig viele **Unterpunkte**, jeweils mit Überschrift, **Text**, **📷 Fotos** (Kamera oder Galerie)
   und **🎤 Sprachnotizen**; über ⋮ am Unterpunkt nach oben/unten verschieben oder löschen
 - Unterpunkte mit ▾/▸ **ein- und ausklappen** (eingeklappt: Kurzinfo mit 📷/🎤 und Textanfang, antippen öffnet);
-  im Bericht-Menü ⋮ „Alle einklappen/ausklappen“; der Zustand bleibt auf dem Gerät gespeichert
+  Tippen auf die Überschrift **„Unterpunkte“** klappt alle ein (nochmal: alle aus), ebenso im Bericht-Menü ⋮;
+  der Zustand bleibt auf dem Gerät gespeichert
 - gespeichert wird automatisch; Fotos werden auf max. 1920 Pixel verkleinert
 - Foto antippen = Vollbild mit Teilen, Speichern, Löschen; Aufnahme mit „Fertig“ beenden oder „Verwerfen“ (max. 15 Min.)
 

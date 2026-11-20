@@ -46,7 +46,11 @@
       </label>
       <textarea id="r-notes" class="autogrow notes-input" rows="2" placeholder="Notizen zum Bericht …"></textarea>
 
-      <h2 class="section-title">Unterpunkte</h2>
+      <h2 class="section-title">
+        <button id="fold-all" class="section-toggle" type="button" aria-expanded="true">
+          <span class="arrow" aria-hidden="true">▾</span> Unterpunkte <span id="item-count" class="count"></span>
+        </button>
+      </h2>
       <div id="items"></div>
       <button id="add-item" class="add-item" type="button">+ Unterpunkt hinzufügen</button>
       <p id="r-updated" class="date"></p>

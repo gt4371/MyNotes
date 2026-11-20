@@ -396,6 +396,7 @@ function renderItems() {
     applyFold(item.id);
     requestAnimationFrame(() => autogrow(ta));
   });
+  updateFoldAll();
   if (recorder && recTarget) {
     const el = itemEl(recTarget);
     if (el) el.classList.add('recording-target');
@@ -466,7 +467,32 @@ function setFold(itemId, collapse) {
   if (collapse) collapsed.add(itemId); else collapsed.delete(itemId);
   saveFold();
   applyFold(itemId);
+  updateFoldAll();
 }
+
+/** Überschrift „Unterpunkte“: Pfeil und Anzahl aktualisieren */
+function updateFoldAll() {
+  if (!current) return;
+  const n = current.items.length;
+  const allCollapsed = n > 0 && current.items.every(i => collapsed.has(i.id));
+  const btn = $('#fold-all');
+  btn.setAttribute('aria-expanded', String(!allCollapsed));
+  btn.title = allCollapsed ? 'Alle Unterpunkte ausklappen' : 'Alle Unterpunkte einklappen';
+  $('#item-count').textContent = n ? `(${n})` : '';
+}
+
+function setFoldAll(collapse) {
+  current.items.forEach(i => { if (collapse) collapsed.add(i.id); else collapsed.delete(i.id); });
+  saveFold();
+  current.items.forEach(i => applyFold(i.id));
+  updateFoldAll();
+}
+
+$('#fold-all').addEventListener('click', () => {
+  if (!current || !current.items.length) return;
+  // Ist mindestens einer offen → alle einklappen, sonst alle ausklappen
+  setFoldAll(current.items.some(i => !collapsed.has(i.id)));
+});
 
 /** Chrome kennt bei eigenen Aufnahmen die Länge erst nach einmaligem Durchspulen – das hier holt es nach. */
 function fixDuration(audio) {
@@ -1108,8 +1134,8 @@ const actions = {
     }
   },
 
-  'collapse-all'() { current.items.forEach(i => setFold(i.id, true)); },
-  'expand-all'() { current.items.forEach(i => setFold(i.id, false)); },
+  'collapse-all'() { setFoldAll(true); },
+  'expand-all'() { setFoldAll(false); },
 
   'item-up'() { moveItem(menuItemId, -1); },
   'item-down'() { moveItem(menuItemId, 1); },
