@@ -39,7 +39,7 @@ Adresse: **https://gt4371.github.io/MyNotes/**
 - **Drucken / als PDF speichern** – Druckansicht (Sprachnotizen nur als Hinweis mit Länge)
 
 **Sicherung** (Menü ⋮ in der Liste): alle Berichte inkl. Fotos und Sprachnotizen. Die App fragt, wohin:
-- **📤 Teilen** – Android-Teilen-Menü, z. B. „In Drive speichern“ (mit Ordnerwahl), Dateien, E-Mail;
+- **📤 Teilen** – Android-Teilen-Menü, z. B. **OneDrive** (OneDrive-App nötig) oder „In Drive speichern“ (jeweils mit Ordnerwahl), Dateien, E-Mail;
   Android erlaubt dabei keine `.json`-Dateien, daher heißt die Datei `berichte-sicherung-JJJJ-MM-TT.txt`
 - **📁 Speicherort wählen** – nur wo der Browser das kann (z. B. Chrome/Edge am PC)
 - **⤓ In „Downloads“ speichern** – `berichte-sicherung-JJJJ-MM-TT.json`
