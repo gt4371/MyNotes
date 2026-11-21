@@ -7,7 +7,7 @@
    Die Foto-/Audiodaten selbst liegen getrennt im Store "files" (Schlüssel = Anhang-id).
    ====================================================================== */
 
-const APP_VERSION = '1.10 (20.11.2026)';
+const APP_VERSION = '1.11 (21.11.2026)';
 const DB_NAME = 'notizen';
 let dbPromise = null;
 
@@ -1133,10 +1133,12 @@ const actions = {
       out.push({ ...r, attachments: await withData(r.attachments), items });
     }
     const data = { app: 'berichte', version: 3, exported: new Date().toISOString(), reports: out };
-    downloadBlob(`berichte-sicherung-${isoDate(Date.now())}.json`,
-      new Blob([JSON.stringify(data)], { type: 'application/json' }));
+    const json = JSON.stringify(data);
+    const base = `berichte-sicherung-${isoDate(Date.now())}`;
+    const where = await saveWithChoice(json, base, reports.size, missing);
+    if (!where) return;
     localStorage.setItem('lastBackup', String(Date.now()));
-    toast(`${reports.size} Berichte gesichert (Ordner „Downloads“)` + (missing ? ` – ${missing} Anhänge fehlten` : ''));
+    toast(`${reports.size} ${reports.size === 1 ? 'Bericht' : 'Berichte'} gesichert (${where})` + (missing ? ` – ${missing} Anhänge fehlten` : ''));
   },
 
   import() {
@@ -1203,6 +1205,73 @@ const actions = {
   'item-down'() { moveItem(menuItemId, 1); },
   'item-delete'() { deleteItem(menuItemId); },
 };
+
+/* ---------- Sicherung: fragen, wo sie gespeichert werden soll ---------- */
+
+/**
+ * Zeigt die Auswahl (Speicherort wählen / Teilen / Downloads) und speichert dort.
+ * Gibt eine Beschreibung des Ziels zurück oder null bei Abbruch.
+ * Hinweis: Android lässt beim Teilen keine .json-Dateien zu – dort wird die Sicherung als .txt geteilt
+ * (der Import erkennt Sicherungen am Inhalt).
+ */
+async function saveWithChoice(json, base, count, missing) {
+  const jsonFile = new File([json], base + '.json', { type: 'application/json' });
+  const txtFile = new File([json], base + '.txt', { type: 'text/plain' });
+  const canPick = typeof window.showSaveFilePicker === 'function';
+  const canShare = !!(navigator.canShare && navigator.share && navigator.canShare({ files: [txtFile] }));
+
+  const dlg = $('#save-dialog');
+  const bytes = jsonFile.size;
+  const size = bytes < 1048576 ? Math.max(1, Math.round(bytes / 1024)) + ' KB' : (bytes / 1048576).toFixed(1).replace('.', ',') + ' MB';
+  $('#save-info').textContent = `${count} Bericht${count === 1 ? '' : 'e'}, ${size} – wohin soll die Sicherung?`;
+  dlg.querySelector('[data-save="picker"]').hidden = !canPick;
+  dlg.querySelector('[data-save="share"]').hidden = !canShare;
+
+  for (;;) {
+    const choice = await new Promise(resolve => {
+      const onClick = e => {
+        const b = e.target.closest('button[data-save]');
+        if (!b) return;
+        cleanup();
+        resolve(b.dataset.save);
+      };
+      const onCancel = () => { cleanup(); resolve('cancel'); };
+      const cleanup = () => {
+        dlg.removeEventListener('click', onClick);
+        dlg.removeEventListener('cancel', onCancel);
+        if (dlg.open) dlg.close();
+      };
+      dlg.addEventListener('click', onClick);
+      dlg.addEventListener('cancel', onCancel);
+      dlg.showModal();
+    });
+
+    try {
+      if (choice === 'cancel') return null;
+      if (choice === 'download') {
+        downloadBlob(jsonFile.name, jsonFile);
+        return 'Ordner „Downloads“';
+      }
+      if (choice === 'picker') {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: jsonFile.name,
+          types: [{ description: 'Berichte-Sicherung', accept: { 'application/json': ['.json'] } }],
+        });
+        const w = await handle.createWritable();
+        await w.write(jsonFile);
+        await w.close();
+        return '„' + handle.name + '“';
+      }
+      if (choice === 'share') {
+        await navigator.share({ files: [txtFile], title: 'Berichte-Sicherung' });
+        return 'geteilt als „' + txtFile.name + '“';
+      }
+    } catch (err) {
+      if (err && err.name === 'AbortError') continue; // Auswahl abgebrochen → nochmal fragen
+      toast('Speichern nicht möglich: ' + (err && err.message ? err.message : err));
+    }
+  }
+}
 
 /* ---------- Import ---------- */
 

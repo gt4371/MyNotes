@@ -38,8 +38,13 @@ Adresse: **https://gt4371.github.io/MyNotes/**
 - **Teilen** – dieselbe Datei direkt per WhatsApp, Mail usw.
 - **Drucken / als PDF speichern** – Druckansicht (Sprachnotizen nur als Hinweis mit Länge)
 
-**Sicherung** (Menü ⋮ in der Liste): alle Berichte inkl. Fotos und Sprachnotizen als
-`berichte-sicherung-JJJJ-MM-TT.json`; **Sicherung importieren** spielt sie wieder ein
+**Sicherung** (Menü ⋮ in der Liste): alle Berichte inkl. Fotos und Sprachnotizen. Die App fragt, wohin:
+- **📤 Teilen** – Android-Teilen-Menü, z. B. „In Drive speichern“ (mit Ordnerwahl), Dateien, E-Mail;
+  Android erlaubt dabei keine `.json`-Dateien, daher heißt die Datei `berichte-sicherung-JJJJ-MM-TT.txt`
+- **📁 Speicherort wählen** – nur wo der Browser das kann (z. B. Chrome/Edge am PC)
+- **⤓ In „Downloads“ speichern** – `berichte-sicherung-JJJJ-MM-TT.json`
+
+ **Sicherung importieren** spielt sie wieder ein
 (auch ältere Notizen-Sicherungen und `.txt`-Dateien). Frühere Notizen wurden automatisch zu Berichten
 mit einem Unterpunkt.
 

@@ -113,6 +113,16 @@
   <input id="camera-file" type="file" accept="image/*" capture="environment" hidden>
   <input id="photo-file" type="file" accept="image/*" multiple hidden>
   <input id="import-file" type="file" accept=".json,.txt,application/json,text/plain" multiple hidden>
+  <!-- Wohin soll die Sicherung? -->
+  <dialog id="save-dialog" class="save-dialog">
+    <h3>Sicherung speichern</h3>
+    <p id="save-info" class="save-info"></p>
+    <button type="button" data-save="picker">📁 Speicherort wählen …</button>
+    <button type="button" data-save="share">📤 Teilen (Drive, Dateien, Mail …)</button>
+    <button type="button" data-save="download">⤓ In „Downloads“ speichern</button>
+    <button type="button" data-save="cancel" class="cancel">Abbrechen</button>
+  </dialog>
+
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
   <script src="app.js"></script>

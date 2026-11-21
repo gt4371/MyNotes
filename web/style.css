@@ -288,3 +288,18 @@ mark { background: rgba(255, 179, 0, .4); color: inherit; border-radius: 2px; }
   flex: 1; min-width: 0; font: inherit; color: var(--text); background: var(--bg);
   border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; resize: none; outline: none;
 }
+
+/* Dialog „Sicherung speichern“ */
+.save-dialog {
+  border: 0; border-radius: 16px; padding: 18px 16px 12px; width: min(420px, calc(100vw - 32px));
+  background: var(--card); color: var(--text); box-shadow: 0 10px 40px rgba(0, 0, 0, .35);
+}
+.save-dialog::backdrop { background: rgba(0, 0, 0, .45); }
+.save-dialog h3 { margin: 0 0 4px; font-size: 18px; }
+.save-info { margin: 0 0 12px; color: var(--muted); font-size: 14px; }
+.save-dialog button {
+  display: block; width: 100%; text-align: left; margin: 0 0 8px; padding: 13px 14px;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--bg); font-size: 15px;
+}
+.save-dialog button:active { opacity: .7; }
+.save-dialog .cancel { text-align: center; background: none; border: 0; color: var(--primary); font-weight: 600; margin: 4px 0 0; }
