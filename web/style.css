@@ -303,3 +303,12 @@ mark { background: rgba(255, 179, 0, .4); color: inherit; border-radius: 2px; }
 }
 .save-dialog button:active { opacity: .7; }
 .save-dialog .cancel { text-align: center; background: none; border: 0; color: var(--primary); font-weight: 600; margin: 4px 0 0; }
+
+/* OneDrive-Einrichtung */
+.od-field { display: block; margin: 0 0 10px; font-size: 13px; color: var(--muted); }
+.od-field input {
+  display: block; width: 100%; margin-top: 4px; padding: 10px 12px; font: inherit; font-size: 15px; color: var(--text);
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px; outline: none;
+}
+.od-field input:focus { border-color: var(--primary); }
+.od-dialog [data-od="save"] { text-align: center; background: var(--primary); border-color: var(--primary); color: #fff; font-weight: 600; }

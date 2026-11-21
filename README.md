@@ -39,7 +39,9 @@ Adresse: **https://gt4371.github.io/MyNotes/**
 - **Drucken / als PDF speichern** – Druckansicht (Sprachnotizen nur als Hinweis mit Länge)
 
 **Sicherung** (Menü ⋮ in der Liste): alle Berichte inkl. Fotos und Sprachnotizen. Die App fragt, wohin:
-- **📤 Teilen** – Android-Teilen-Menü, z. B. **OneDrive** (OneDrive-App nötig) oder „In Drive speichern“ (jeweils mit Ordnerwahl), Dateien, E-Mail;
+- **☁️ In OneDrive sichern** – lädt die Sicherung direkt in den OneDrive-Ordner `Berichte-Sicherungen`
+  (einmalige Einrichtung nötig, siehe unten)
+- **📤 Teilen** – Android-Teilen-Menü, z. B. „In Drive speichern“ (mit Ordnerwahl), Dateien, E-Mail;
   Android erlaubt dabei keine `.json`-Dateien, daher heißt die Datei `berichte-sicherung-JJJJ-MM-TT.txt`
 - **📁 Speicherort wählen** – nur wo der Browser das kann (z. B. Chrome/Edge am PC)
 - **⤓ In „Downloads“ speichern** – `berichte-sicherung-JJJJ-MM-TT.json`
@@ -47,6 +49,27 @@ Adresse: **https://gt4371.github.io/MyNotes/**
 **Sicherung importieren** spielt sie wieder ein
 (auch ältere Notizen-Sicherungen und `.txt`-Dateien). Frühere Notizen wurden automatisch zu Berichten
 mit einem Unterpunkt.
+
+### OneDrive einrichten (einmalig)
+
+Die App meldet sich direkt bei Microsoft an und lädt nur in den eigenen OneDrive hoch (Berechtigung
+`Files.ReadWrite`). Dafür braucht sie eine **App-Registrierung** bei Microsoft:
+
+1. https://entra.microsoft.com (oder https://portal.azure.com) mit dem Microsoft-Konto öffnen →
+   **App-Registrierungen → Neue Registrierung**.
+2. Name: `Berichte`. **Unterstützte Kontotypen:**
+   - privates OneDrive: „Konten in einem beliebigen Organisationsverzeichnis … und persönliche Microsoft-Konten“
+   - Firmen-OneDrive: „Nur Konten in diesem Organisationsverzeichnis“ (meist macht das die IT)
+3. **Umleitungs-URI:** Plattform **„Single-Page-Anwendung (SPA)“**, Adresse `https://gt4371.github.io/MyNotes/`
+   → **Registrieren**.
+4. **API-Berechtigungen → Berechtigung hinzufügen → Microsoft Graph → Delegierte Berechtigungen:**
+   `Files.ReadWrite` und `offline_access` hinzufügen.
+5. Auf der Übersichtsseite die **Anwendungs-ID (Client)** kopieren (bei Firmenkonten auch die
+   **Verzeichnis-ID (Mandant)**).
+6. In der App: Menü ⋮ → **OneDrive einrichten …** → IDs eintragen → Speichern.
+7. Menü ⋮ → **Sicherung exportieren → ☁️ In OneDrive sichern**. Beim ersten Mal kommt die Microsoft-Anmeldung,
+   danach lädt die App die Sicherung automatisch hoch. Später reicht ein Tipp (die Anmeldung hält ca. 24 Stunden,
+   danach kommt sie erneut).
 
 ⚠️ Die Daten liegen im Browser. Wer in Chrome „Browserdaten löschen“ inkl. Website-Daten wählt, löscht sie mit –
 deshalb regelmäßig eine **Sicherung exportieren**. Das Menü zeigt, wann zuletzt gesichert wurde, und die App-Version.

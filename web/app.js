@@ -7,7 +7,7 @@
    Die Foto-/Audiodaten selbst liegen getrennt im Store "files" (Schlüssel = Anhang-id).
    ====================================================================== */
 
-const APP_VERSION = '1.11 (21.11.2026)';
+const APP_VERSION = '1.12 (21.11.2026)';
 const DB_NAME = 'notizen';
 let dbPromise = null;
 
@@ -1115,31 +1115,13 @@ document.querySelectorAll('.menu').forEach(menu => menu.addEventListener('click'
 const actions = {
   async 'export-all'() {
     toast('Sicherung wird erstellt …');
-    const list = [...reports.values()].sort((a, b) => b.date.localeCompare(a.date));
-    const out = [];
-    let missing = 0;
-    const withData = async list => {
-      const atts = [];
-      for (const a of list) {
-        const rec = await dbGetFile(a.id);
-        if (rec) atts.push({ ...a, data: await blobToDataUrl(rec.blob) });
-        else missing++;
-      }
-      return atts;
-    };
-    for (const r of list) {
-      const items = [];
-      for (const item of r.items) items.push({ ...item, attachments: await withData(item.attachments) });
-      out.push({ ...r, attachments: await withData(r.attachments), items });
-    }
-    const data = { app: 'berichte', version: 3, exported: new Date().toISOString(), reports: out };
-    const json = JSON.stringify(data);
-    const base = `berichte-sicherung-${isoDate(Date.now())}`;
-    const where = await saveWithChoice(json, base, reports.size, missing);
+    const { json, base, count, missing } = await buildBackup();
+    const where = await saveWithChoice(json, base, count, missing);
     if (!where) return;
-    localStorage.setItem('lastBackup', String(Date.now()));
-    toast(`${reports.size} ${reports.size === 1 ? 'Bericht' : 'Berichte'} gesichert (${where})` + (missing ? ` – ${missing} Anhänge fehlten` : ''));
+    backupDone(count, missing, where);
   },
+
+  'onedrive-setup'() { openOneDriveSetup(); },
 
   import() {
     $('#import-file').value = '';
@@ -1206,6 +1188,37 @@ const actions = {
   'item-delete'() { deleteItem(menuItemId); },
 };
 
+/* ---------- Sicherung erstellen ---------- */
+
+async function buildBackup() {
+  const list = [...reports.values()].sort((a, b) => b.date.localeCompare(a.date));
+  const out = [];
+  let missing = 0;
+  const withData = async atts => {
+    const res = [];
+    for (const a of atts) {
+      const rec = await dbGetFile(a.id);
+      if (rec) res.push({ ...a, data: await blobToDataUrl(rec.blob) });
+      else missing++;
+    }
+    return res;
+  };
+  for (const r of list) {
+    const items = [];
+    for (const item of r.items) items.push({ ...item, attachments: await withData(item.attachments) });
+    out.push({ ...r, attachments: await withData(r.attachments), items });
+  }
+  const data = { app: 'berichte', version: 3, exported: new Date().toISOString(), reports: out };
+  const now = new Date();
+  const stamp = `${isoDate(now)}_${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}`;
+  return { json: JSON.stringify(data), base: `berichte-sicherung-${stamp}`, count: list.length, missing };
+}
+
+function backupDone(count, missing, where) {
+  localStorage.setItem('lastBackup', String(Date.now()));
+  toast(`${count} ${count === 1 ? 'Bericht' : 'Berichte'} gesichert (${where})` + (missing ? ` – ${missing} Anhänge fehlten` : ''));
+}
+
 /* ---------- Sicherung: fragen, wo sie gespeichert werden soll ---------- */
 
 /**
@@ -1248,6 +1261,11 @@ async function saveWithChoice(json, base, count, missing) {
 
     try {
       if (choice === 'cancel') return null;
+      if (choice === 'onedrive') {
+        const res = await oneDriveBackup(jsonFile);
+        if (res === 'redirect' || res === 'setup') return null; // geht nach der Anmeldung automatisch weiter
+        return res;
+      }
       if (choice === 'download') {
         downloadBlob(jsonFile.name, jsonFile);
         return 'Ordner „Downloads“';
@@ -1272,6 +1290,208 @@ async function saveWithChoice(json, base, count, missing) {
     }
   }
 }
+
+/* ======================================================================
+   OneDrive (Microsoft Graph) – Anmeldung per OAuth 2.0 mit PKCE, ohne Zusatzbibliothek
+   ====================================================================== */
+
+const OD_SCOPES = 'Files.ReadWrite offline_access';
+const odCfg = () => {
+  try { return JSON.parse(localStorage.getItem('odConfig') || '{}'); } catch { return {}; }
+};
+const odRedirect = () => location.origin + location.pathname;   // z. B. https://gt4371.github.io/MyNotes/
+const odAuthority = () => `https://login.microsoftonline.com/${encodeURIComponent((odCfg().tenant || 'common').trim())}/oauth2/v2.0`;
+const odFolder = () => (odCfg().folder || 'Berichte-Sicherungen').replace(/^[/\s]+|[/\s]+$/g, '') || 'Berichte-Sicherungen';
+
+function b64url(bytes) {
+  return btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function randomString(n = 48) {
+  return b64url(crypto.getRandomValues(new Uint8Array(n)));
+}
+
+function odTokens() {
+  try { return JSON.parse(localStorage.getItem('odTokens') || 'null'); } catch { return null; }
+}
+function odSaveTokens(t) {
+  const prev = odTokens() || {};
+  localStorage.setItem('odTokens', JSON.stringify({
+    access: t.access_token,
+    refresh: t.refresh_token || prev.refresh,
+    expires: Date.now() + (Number(t.expires_in) || 3600) * 1000 - 60000,
+  }));
+}
+
+/** Leitet zur Microsoft-Anmeldung weiter; nach der Rückkehr läuft die Sicherung automatisch weiter. */
+async function odLogin() {
+  const verifier = randomString(48);
+  const challenge = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
+  const state = randomString(16);
+  sessionStorage.setItem('odAuth', JSON.stringify({ verifier, state }));
+  localStorage.setItem('odPending', String(Date.now()));
+  const params = new URLSearchParams({
+    client_id: odCfg().clientId.trim(),
+    response_type: 'code',
+    redirect_uri: odRedirect(),
+    response_mode: 'query',
+    scope: OD_SCOPES,
+    state,
+    code_challenge: challenge,
+    code_challenge_method: 'S256',
+    prompt: 'select_account',
+  });
+  location.assign(`${odAuthority()}/authorize?${params}`);
+}
+
+async function odTokenRequest(body) {
+  const res = await fetch(`${odAuthority()}/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ client_id: odCfg().clientId.trim(), scope: OD_SCOPES, ...body }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.access_token) {
+    throw new Error(data.error_description ? data.error_description.split('\r\n')[0] : 'Anmeldung fehlgeschlagen (' + res.status + ')');
+  }
+  odSaveTokens(data);
+  return data.access_token;
+}
+
+/** Gültiges Zugriffstoken oder null (dann ist eine neue Anmeldung nötig). */
+async function odAccessToken() {
+  const t = odTokens();
+  if (!t) return null;
+  if (t.access && t.expires > Date.now()) return t.access;
+  if (!t.refresh) return null;
+  try {
+    return await odTokenRequest({ grant_type: 'refresh_token', refresh_token: t.refresh, redirect_uri: odRedirect() });
+  } catch {
+    localStorage.removeItem('odTokens');
+    return null;
+  }
+}
+
+/** Rückkehr von der Microsoft-Anmeldung (…?code=…&state=…) verarbeiten. */
+async function odHandleRedirect() {
+  const q = new URLSearchParams(location.search);
+  if (!q.has('code') && !q.has('error')) return false;
+  const saved = JSON.parse(sessionStorage.getItem('odAuth') || 'null');
+  sessionStorage.removeItem('odAuth');
+  history.replaceState(history.state, '', odRedirect() + location.hash); // Code aus der Adresse entfernen
+  if (q.has('error')) {
+    localStorage.removeItem('odPending');
+    toast('OneDrive-Anmeldung abgebrochen: ' + (q.get('error_description') || q.get('error')).split('\n')[0]);
+    return true;
+  }
+  if (!saved || saved.state !== q.get('state')) {
+    localStorage.removeItem('odPending');
+    toast('OneDrive-Anmeldung ungültig – bitte nochmal versuchen.');
+    return true;
+  }
+  try {
+    await odTokenRequest({ grant_type: 'authorization_code', code: q.get('code'), code_verifier: saved.verifier, redirect_uri: odRedirect() });
+  } catch (err) {
+    localStorage.removeItem('odPending');
+    toast('OneDrive: ' + err.message);
+    return true;
+  }
+  // Sicherung, die vor der Anmeldung angefordert wurde, jetzt hochladen
+  const pending = Number(localStorage.getItem('odPending') || 0);
+  localStorage.removeItem('odPending');
+  if (pending && Date.now() - pending < 30 * 60000) {
+    toast('Angemeldet – Sicherung wird nach OneDrive hochgeladen …');
+    const { json, base, count, missing } = await buildBackup();
+    const res = await oneDriveBackup(new File([json], base + '.json', { type: 'application/json' }));
+    if (res && res !== 'redirect' && res !== 'setup') backupDone(count, missing, res);
+  } else {
+    toast('Bei OneDrive angemeldet');
+  }
+  return true;
+}
+
+/** Lädt die Datei in den OneDrive-Ordner. Rückgabe: Beschreibung, 'redirect' (Anmeldung läuft) oder 'setup'. */
+async function oneDriveBackup(file) {
+  if (!odCfg().clientId) {
+    openOneDriveSetup('Bitte zuerst die Anwendungs-ID eintragen.');
+    return 'setup';
+  }
+  if (!navigator.onLine) throw new Error('Keine Internetverbindung');
+  const token = await odAccessToken();
+  if (!token) {
+    toast('Weiterleitung zur Microsoft-Anmeldung …');
+    await odLogin();
+    return 'redirect';
+  }
+  toast('Sicherung wird nach OneDrive hochgeladen …');
+  const path = `${odFolder()}/${file.name}`.split('/').map(encodeURIComponent).join('/');
+  const sess = await fetch(`https://graph.microsoft.com/v1.0/me/drive/root:/${path}:/createUploadSession`, {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ item: { '@microsoft.graph.conflictBehavior': 'rename' } }),
+  });
+  if (sess.status === 401) {
+    localStorage.removeItem('odTokens');
+    await odLogin();
+    return 'redirect';
+  }
+  const sessData = await sess.json().catch(() => ({}));
+  if (!sess.ok || !sessData.uploadUrl) {
+    throw new Error((sessData.error && sessData.error.message) || 'OneDrive antwortet mit Fehler ' + sess.status);
+  }
+  const CHUNK = 320 * 1024 * 12; // ~3,75 MB, Vielfaches von 320 KiB (Vorgabe von OneDrive)
+  let item = null;
+  for (let start = 0; start < file.size; start += CHUNK) {
+    const end = Math.min(start + CHUNK, file.size);
+    const res = await fetch(sessData.uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Range': `bytes ${start}-${end - 1}/${file.size}` },
+      body: file.slice(start, end),
+    });
+    if (!res.ok) throw new Error('Hochladen fehlgeschlagen (' + res.status + ')');
+    if (res.status === 200 || res.status === 201) item = await res.json().catch(() => null);
+  }
+  const name = (item && item.name) || file.name;
+  return `OneDrive: ${odFolder()}/${name}`;
+}
+
+function openOneDriveSetup(hint) {
+  const dlg = $('#od-dialog');
+  const cfg = odCfg();
+  $('#od-client').value = cfg.clientId || '';
+  $('#od-tenant').value = cfg.tenant && cfg.tenant !== 'common' ? cfg.tenant : '';
+  $('#od-folder').value = cfg.folder || '';
+  const signedIn = !!odTokens();
+  $('#od-status').textContent = (hint ? hint + ' ' : '') +
+    (cfg.clientId ? (signedIn ? 'Status: angemeldet.' : 'Status: eingerichtet, noch nicht angemeldet.') : 'Status: nicht eingerichtet.') +
+    ' Umleitungs-URI für die Registrierung: ' + odRedirect();
+  dlg.querySelector('[data-od="logout"]').hidden = !signedIn;
+  dlg.showModal();
+}
+
+$('#od-dialog').addEventListener('click', e => {
+  const b = e.target.closest('button[data-od]');
+  if (!b) return;
+  const dlg = $('#od-dialog');
+  if (b.dataset.od === 'save') {
+    const clientId = $('#od-client').value.trim();
+    if (clientId && !/^[0-9a-f-]{36}$/i.test(clientId)) {
+      $('#od-status').textContent = 'Die Anwendungs-ID hat das Format 1a2b3c4d-1234-… (36 Zeichen).';
+      return;
+    }
+    const old = odCfg();
+    const cfg = { clientId, tenant: $('#od-tenant').value.trim() || 'common', folder: $('#od-folder').value.trim() };
+    localStorage.setItem('odConfig', JSON.stringify(cfg));
+    if (old.clientId !== cfg.clientId || (old.tenant || 'common') !== cfg.tenant) localStorage.removeItem('odTokens');
+    dlg.close();
+    toast(clientId ? 'OneDrive eingerichtet' : 'OneDrive-Einstellungen gelöscht');
+  } else if (b.dataset.od === 'logout') {
+    localStorage.removeItem('odTokens');
+    dlg.close();
+    toast('Von OneDrive abgemeldet');
+  } else {
+    dlg.close();
+  }
+});
 
 /* ---------- Import ---------- */
 
@@ -1417,6 +1637,7 @@ window.addEventListener('hashchange', e => {
     toast('Speicher nicht verfügbar: ' + err.message);
   }
   await route();
+  odHandleRedirect().catch(err => toast('OneDrive: ' + err.message));
 })();
 
 if ('serviceWorker' in navigator) {

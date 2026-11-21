@@ -96,6 +96,7 @@
   <div id="main-menu" class="menu" hidden role="menu">
     <button data-action="export-all" role="menuitem">Sicherung exportieren (alle Berichte)</button>
     <button data-action="import" role="menuitem">Sicherung importieren</button>
+    <button data-action="onedrive-setup" role="menuitem">OneDrive einrichten …</button>
     <p id="backup-info" class="menu-info"></p>
   </div>
   <div id="report-menu" class="menu" hidden role="menu">
@@ -117,10 +118,34 @@
   <dialog id="save-dialog" class="save-dialog">
     <h3>Sicherung speichern</h3>
     <p id="save-info" class="save-info"></p>
+    <button type="button" data-save="onedrive">☁️ In OneDrive sichern</button>
     <button type="button" data-save="picker">📁 Speicherort wählen …</button>
-    <button type="button" data-save="share">📤 Teilen (OneDrive, Drive, Mail …)</button>
+    <button type="button" data-save="share">📤 Teilen (Drive, Mail, Dateien …)</button>
     <button type="button" data-save="download">⤓ In „Downloads“ speichern</button>
     <button type="button" data-save="cancel" class="cancel">Abbrechen</button>
+  </dialog>
+
+  <!-- OneDrive einrichten -->
+  <dialog id="od-dialog" class="save-dialog od-dialog">
+    <h3>OneDrive einrichten</h3>
+    <p class="save-info">Für die direkte Sicherung braucht die App eine einmalige Registrierung bei Microsoft
+      (Azure / Entra ID). Die Anleitung steht in der README von MyNotes.</p>
+    <label class="od-field">
+      <span>Anwendungs-ID (Client-ID)</span>
+      <input id="od-client" type="text" autocomplete="off" spellcheck="false" placeholder="z. B. 1a2b3c4d-…">
+    </label>
+    <label class="od-field">
+      <span>Verzeichnis-ID (Tenant) – nur für Firmenkonten, sonst leer</span>
+      <input id="od-tenant" type="text" autocomplete="off" spellcheck="false" placeholder="common">
+    </label>
+    <label class="od-field">
+      <span>Ordner in OneDrive</span>
+      <input id="od-folder" type="text" autocomplete="off" spellcheck="false" placeholder="Berichte-Sicherungen">
+    </label>
+    <p id="od-status" class="save-info"></p>
+    <button type="button" data-od="save">Speichern</button>
+    <button type="button" data-od="logout">Von OneDrive abmelden</button>
+    <button type="button" data-od="cancel" class="cancel">Schließen</button>
   </dialog>
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
