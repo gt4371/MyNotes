@@ -44,7 +44,7 @@ Adresse: **https://gt4371.github.io/MyNotes/**
 - **📁 Speicherort wählen** – nur wo der Browser das kann (z. B. Chrome/Edge am PC)
 - **⤓ In „Downloads“ speichern** – `berichte-sicherung-JJJJ-MM-TT.json`
 
- **Sicherung importieren** spielt sie wieder ein
+**Sicherung importieren** spielt sie wieder ein
 (auch ältere Notizen-Sicherungen und `.txt`-Dateien). Frühere Notizen wurden automatisch zu Berichten
 mit einem Unterpunkt.
 
