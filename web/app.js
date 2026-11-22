@@ -7,7 +7,7 @@
    Die Foto-/Audiodaten selbst liegen getrennt im Store "files" (Schlüssel = Anhang-id).
    ====================================================================== */
 
-const APP_VERSION = '1.12 (21.11.2026)';
+const APP_VERSION = '1.13 (22.11.2026)';
 const DB_NAME = 'notizen';
 let dbPromise = null;
 
@@ -278,7 +278,8 @@ function autogrow(el) {
 
 function matches(r, q) {
   if (!q) return true;
-  const hay = [r.title, r.place, r.people, r.notes, ...r.items.flatMap(i => [i.title, i.text])].join('\n').toLowerCase();
+  const hay = [r.title, r.place, r.people, r.notes, ...r.items.flatMap(i => [i.title, i.text]),
+    ...allAttachments(r).map(a => a.comment || '')].join('\n').toLowerCase();
   return hay.includes(q);
 }
 
@@ -425,8 +426,10 @@ function renderAttachments(itemId) {
 
   const photoBox = el.querySelector('.photos');
   photoBox.hidden = photos.length === 0;
-  photoBox.innerHTML = photos.map(a =>
-    `<button type="button" data-file="${escapeHtml(a.id)}" aria-label="Foto öffnen"><img alt=""></button>`).join('');
+  photoBox.innerHTML = photos.map(a => `<div class="photo">
+      <button type="button" data-file="${escapeHtml(a.id)}" aria-label="Foto öffnen"><img alt=""></button>
+      ${(a.comment || '').trim() ? `<span class="cap" data-file="${escapeHtml(a.id)}">💬 ${escapeHtml(a.comment.trim())}</span>` : ''}
+    </div>`).join('');
   photoBox.querySelectorAll('button').forEach(async btn => {
     const url = await fileUrl(btn.dataset.file).catch(() => null);
     if (url) btn.querySelector('img').src = url;
@@ -680,7 +683,7 @@ $('#edit-view .editor').addEventListener('click', async e => {
     return;
   }
 
-  const photoBtn = e.target.closest('.photos button[data-file]');
+  const photoBtn = e.target.closest('.photos [data-file]');
   if (photoBtn) {
     openViewer(id, photoBtn.dataset.file);
     return;
@@ -796,18 +799,41 @@ $('#camera-file').addEventListener('change', onPhotosChosen);
 
 let viewer = null; // { itemId, fileId }
 
+const viewerAtt = () => {
+  const item = viewer && findItem(viewer.itemId);
+  return item ? item.attachments.find(a => a.id === viewer.fileId) : null;
+};
+
 async function openViewer(itemId, fileId) {
-  viewer = { itemId, fileId };
+  viewer = { itemId, fileId, changed: false };
+  const att = viewerAtt();
+  $('#viewer-comment').value = (att && att.comment) || '';
+  autogrow($('#viewer-comment'));
   $('#viewer-img').src = (await fileUrl(fileId)) || '';
   $('#viewer').hidden = false;
   history.pushState({ ...(history.state || {}), viewer: true }, ''); // Zurück-Taste schließt die Ansicht
 }
 
 function hideViewer() {
+  const v = viewer;
   $('#viewer').hidden = true;
   $('#viewer-img').removeAttribute('src');
+  $('#viewer-comment').blur();
   viewer = null;
+  if (v && v.changed && current) {
+    renderAttachments(v.itemId);   // Kommentar unter dem Vorschaubild aktualisieren
+    flushSave(true);
+  }
 }
+
+$('#viewer-comment').addEventListener('input', e => {
+  const att = viewerAtt();
+  if (!att) return;
+  att.comment = e.target.value;
+  viewer.changed = true;
+  autogrow(e.target);
+  scheduleSave();
+});
 function closeViewer() {
   if ($('#viewer').hidden) return;
   if (history.state && history.state.viewer) history.back(); // löst popstate → hideViewer aus
@@ -833,7 +859,8 @@ async function viewerFile() {
 
 $('#viewer-share').addEventListener('click', async () => {
   const file = await viewerFile();
-  if (file) await shareFiles([file], '', '');
+  const att = viewerAtt();
+  if (file) await shareFiles([file], '', ((att && att.comment) || '').trim());
 });
 
 $('#viewer-save').addEventListener('click', async () => {
@@ -966,7 +993,11 @@ async function mediaHtml(attachments, forPrint) {
     const rec = await dbGetFile(a.id);
     if (!rec) continue;
     const data = await blobToDataUrl(rec.blob);
-    if (a.kind === 'photo') photos.push(`<figure><img src="${data}" alt="Foto"></figure>`);
+    if (a.kind === 'photo') {
+      const cap = (a.comment || '').trim();
+      photos.push(`<figure><img src="${data}" alt="${cap ? escapeHtml(cap) : 'Foto'}">` +
+        (cap ? `<figcaption>${escapeHtml(cap)}</figcaption>` : '') + '</figure>');
+    }
     else {
       const len = a.duration ? ` (${formatDuration(a.duration)})` : '';
       audios.push(`<div class="audio"><span>🎤 Sprachnotiz ${audios.length + 1}${len}</span>` +
@@ -1012,6 +1043,7 @@ async function buildReportHtml(r, { forPrint = false } = {}) {
   .photos { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 0 0 10px; }
   figure { margin: 0; break-inside: avoid; }
   figure img { width: 100%; height: auto; display: block; border-radius: 4px; }
+  figcaption { font-size: 13px; color: #444; margin-top: 4px; white-space: pre-wrap; }
   .audio { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 4px 0; color: #444; }
   .audio audio { max-width: 100%; }
   footer { color: #888; font-size: 12px; margin-top: 24px; }

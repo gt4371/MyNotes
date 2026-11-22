@@ -30,7 +30,8 @@ Adresse: **https://gt4371.github.io/MyNotes/**
   Tippen auf die Überschrift **„Unterpunkte“** klappt alle ein (nochmal: alle aus);
   der Zustand bleibt auf dem Gerät gespeichert
 - gespeichert wird automatisch; Fotos werden auf max. 1920 Pixel verkleinert
-- Foto antippen = Vollbild mit Teilen, Speichern, Löschen; Aufnahme mit „Fertig“ beenden oder „Verwerfen“ (max. 15 Min.)
+- Foto antippen = Vollbild mit **Kommentar zum Foto** (wird unter dem Vorschaubild, im Export als Bildunterschrift
+  und in der Suche berücksichtigt), Teilen, Speichern, Löschen; Aufnahme mit „Fertig“ beenden oder „Verwerfen“ (max. 15 Min.)
 
 **Bericht exportieren** (Menü ⋮ im Bericht bzw. ⇪ oben):
 - **Als Datei speichern (HTML)** – der ganze Bericht in *einer* Datei (`Bericht JJJJ-MM-TT Titel.html`):
