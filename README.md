@@ -33,6 +33,8 @@ Adresse: **https://gt4371.github.io/MyNotes/**
 - Foto antippen = Vollbild mit **Kommentar zum Foto** (wird unter dem Vorschaubild, im Export als Bildunterschrift
   und in der Suche berücksichtigt), Teilen, Speichern, Löschen; Aufnahme mit „Fertig“ beenden oder „Verwerfen“ (max. 15 Min.)
 
+**Bericht löschen:** in der Übersicht mit 🗑 auf der Karte oder im Bericht über ⋮ – jeweils mit Rückfrage und „Rückgängig“.
+
 **Bericht exportieren** (Menü ⋮ im Bericht bzw. ⇪ oben):
 - **Als Datei speichern (HTML)** – der ganze Bericht in *einer* Datei (`Bericht JJJJ-MM-TT Titel.html`):
   Fotos eingebettet, Sprachnotizen abspielbar; öffnet sich in jedem Browser

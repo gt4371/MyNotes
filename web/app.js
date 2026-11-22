@@ -7,7 +7,7 @@
    Die Foto-/Audiodaten selbst liegen getrennt im Store "files" (Schlüssel = Anhang-id).
    ====================================================================== */
 
-const APP_VERSION = '1.14 (22.11.2026)';
+const APP_VERSION = '1.15 (22.11.2026)';
 const DB_NAME = 'notizen';
 let dbPromise = null;
 
@@ -306,6 +306,7 @@ function renderList() {
           <span class="badges">${meta}</span>
         </div>
         ${photo ? `<img class="note-thumb" data-file="${escapeHtml(photo.id)}" alt="">` : ''}
+        <button type="button" class="note-del" aria-label="Bericht „${escapeHtml(displayTitle(r))}“ löschen" title="Bericht löschen">🗑</button>
       </div>
     </li>`;
   }).join('');
@@ -324,8 +325,36 @@ function renderList() {
 
 $('#reports').addEventListener('click', e => {
   const li = e.target.closest('.note');
-  if (li) openReport(li.dataset.id);
+  if (!li) return;
+  if (e.target.closest('.note-del')) {
+    const r = reports.get(li.dataset.id);
+    if (r && confirm(`Bericht „${displayTitle(r)}“ mit allen Unterpunkten, Fotos und Sprachnotizen löschen?`)) {
+      removeReport(r.id).then(renderList);
+    }
+    return;
+  }
+  openReport(li.dataset.id);
 });
+
+/** Löscht einen gespeicherten Bericht samt Anhängen und bietet „Rückgängig“ an. */
+async function removeReport(id) {
+  const removed = reports.get(id);
+  if (!removed) return;
+  const removedFiles = [];
+  for (const a of allAttachments(removed)) {
+    const rec = await dbGetFile(a.id);
+    if (rec) removedFiles.push(rec);
+  }
+  await dbDeleteReport(removed.id, allAttachments(removed).map(a => a.id));
+  reports.delete(removed.id);
+  allAttachments(removed).forEach(a => forgetUrl(a.id));
+  toast('Bericht gelöscht', 'Rückgängig', async () => {
+    await dbPutFiles(removedFiles);
+    await dbPutReports([removed]);
+    reports.set(removed.id, removed);
+    renderList();
+  });
+}
 $('#reports').addEventListener('keydown', e => {
   const li = e.target.closest('.note');
   if (li && e.key === 'Enter') openReport(li.dataset.id);
@@ -1190,29 +1219,12 @@ const actions = {
     if (recorder) await stopRecording(false);
     clearTimeout(saveTimer);
     await saving;
-    const removed = reports.get(current.id);
-    let removedFiles = [];
-    if (removed) {
-      for (const a of allAttachments(removed)) {
-        const rec = await dbGetFile(a.id);
-        if (rec) removedFiles.push(rec);
-      }
-      await dbDeleteReport(removed.id, allAttachments(removed).map(a => a.id));
-      reports.delete(removed.id);
-      allAttachments(removed).forEach(a => forgetUrl(a.id));
-    } else if (allAttachments(current).length) {
-      await dbDeleteFiles(allAttachments(current).map(a => a.id));
-    }
+    const id = current.id;
+    const stored = reports.has(id);
+    if (!stored && allAttachments(current).length) await dbDeleteFiles(allAttachments(current).map(a => a.id));
     current = null;
+    if (stored) await removeReport(id);
     await closeEditor();
-    if (removed) {
-      toast('Bericht gelöscht', 'Rückgängig', async () => {
-        await dbPutFiles(removedFiles);
-        await dbPutReports([removed]);
-        reports.set(removed.id, removed);
-        renderList();
-      });
-    }
   },
 
   'item-up'() { moveItem(menuItemId, -1); },
