@@ -344,9 +344,18 @@ mark { background: rgba(255, 179, 0, .4); color: inherit; border-radius: 2px; }
 }
 .viewer-caption textarea { max-height: 25dvh; min-height: 46px; }
 
-/* Löschen in der Übersicht */
-.note-del {
-  flex: none; align-self: flex-start; width: 40px; height: 40px; margin: -8px -10px 0 -4px;
-  border: 0; border-radius: 50%; background: none; font-size: 18px; opacity: .55;
+/* Übersicht: Wischen zum Löschen, Gedrückthalten zum Verschieben */
+.note-wrap { position: relative; border-radius: 12px; touch-action: pan-y; }
+.note-wrap .note { position: relative; z-index: 1; -webkit-touch-callout: none; }
+.note-wrap img { -webkit-touch-callout: none; pointer-events: none; }
+.swipe-bg {
+  position: absolute; inset: 0; border-radius: 12px; background: var(--danger); color: #fff; font-weight: 600;
+  display: flex; align-items: center; justify-content: space-between; padding: 0 20px; opacity: 0;
 }
-.note-del:active { background: var(--border); opacity: 1; }
+.swipe-bg span:last-child { visibility: hidden; }
+.note-wrap.swipe-left .swipe-bg span:first-child { visibility: hidden; }
+.note-wrap.swipe-left .swipe-bg span:last-child { visibility: visible; }
+.note-wrap.swiping .note:active, .note-wrap.dragging .note:active { opacity: 1; }
+.note-wrap.dragging { z-index: 5; }
+.note-wrap.dragging .note { box-shadow: 0 10px 28px rgba(0, 0, 0, .28); transform: scale(1.02); transition: transform .12s; }
+.list-hint { text-align: center; color: var(--muted); font-size: 12px; margin: -100px 16px 110px; }

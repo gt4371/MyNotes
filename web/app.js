@@ -7,7 +7,7 @@
    Die Foto-/Audiodaten selbst liegen getrennt im Store "files" (Schlüssel = Anhang-id).
    ====================================================================== */
 
-const APP_VERSION = '1.15 (22.11.2026)';
+const APP_VERSION = '1.16 (22.11.2026)';
 const DB_NAME = 'notizen';
 let dbPromise = null;
 
@@ -100,6 +100,7 @@ function normalize(r) {
     created,
     updated: Number(r.updated) || created,
     items: Array.isArray(r.items) ? r.items.map(normalizeItem) : [],
+    ...(Number.isFinite(Number(r.order)) && r.order !== null && r.order !== '' ? { order: Number(r.order) } : {}),
   };
 }
 
@@ -283,12 +284,30 @@ function matches(r, q) {
   return hay.includes(q);
 }
 
+/** Reihenfolge der Übersicht: eigene Sortierung (order), sonst nach Datum */
+const byOrder = (a, b) => (a.order ?? Infinity) - (b.order ?? Infinity) ||
+  b.date.localeCompare(a.date) || b.updated - a.updated;
+
+/** Berichte ohne Position (ältere, importierte) bekommen eine – neue/importierte oben, nach Datum. */
+async function ensureOrder() {
+  const all = [...reports.values()];
+  const missing = all.filter(r => !Number.isFinite(r.order))
+    .sort((a, b) => b.date.localeCompare(a.date) || b.updated - a.updated);
+  if (!missing.length) return;
+  const hasOrdered = all.some(r => Number.isFinite(r.order));
+  const min = Math.min(0, ...all.filter(r => Number.isFinite(r.order)).map(r => r.order));
+  missing.forEach((r, i) => { r.order = hasOrdered ? min - missing.length + i : i; });
+  await dbPutReports(missing).catch(() => {});
+}
+
+const topOrder = () => Math.min(0, ...[...reports.values()].filter(r => Number.isFinite(r.order)).map(r => r.order)) - 1;
+
 function renderList() {
   const query = $('#search').value.trim();
   const q = query.toLowerCase();
   const list = [...reports.values()]
     .filter(r => matches(r, q))
-    .sort((a, b) => b.date.localeCompare(a.date) || b.updated - a.updated);
+    .sort(byOrder);
 
   $('#reports').innerHTML = list.map(r => {
     const photo = allAttachments(r).find(a => a.kind === 'photo');
@@ -297,7 +316,9 @@ function renderList() {
     const n = r.items.length;
     const meta = [n === 1 ? '1 Unterpunkt' : `${n} Unterpunkte`, p ? `📷 ${p}` : '', a ? `🎤 ${a}` : ''].filter(Boolean).join(' · ');
     const preview = (r.notes.trim() || r.items.map(i => i.text.trim()).find(Boolean) || '').replace(/\s+/g, ' ');
-    return `<li class="note" data-id="${escapeHtml(r.id)}" tabindex="0">
+    return `<li class="note-wrap" data-id="${escapeHtml(r.id)}">
+     <div class="swipe-bg" aria-hidden="true"><span>🗑 Löschen</span><span>Löschen 🗑</span></div>
+     <div class="note" data-id="${escapeHtml(r.id)}" tabindex="0">
       <div class="note-row">
         <div>
           <h2>${highlight(displayTitle(r), query)}</h2>
@@ -306,8 +327,8 @@ function renderList() {
           <span class="badges">${meta}</span>
         </div>
         ${photo ? `<img class="note-thumb" data-file="${escapeHtml(photo.id)}" alt="">` : ''}
-        <button type="button" class="note-del" aria-label="Bericht „${escapeHtml(displayTitle(r))}“ löschen" title="Bericht löschen">🗑</button>
       </div>
+     </div>
     </li>`;
   }).join('');
 
@@ -315,6 +336,12 @@ function renderList() {
     const url = await fileUrl(img.dataset.file).catch(() => null);
     if (url) img.src = url;
   });
+
+  const hint = $('#list-hint');
+  hint.hidden = list.length === 0;
+  hint.textContent = query
+    ? 'Zum Löschen zur Seite wischen.'
+    : 'Gedrückt halten und ziehen = verschieben · zur Seite wischen = löschen';
 
   const empty = $('#empty');
   empty.hidden = list.length > 0;
@@ -324,17 +351,149 @@ function renderList() {
 }
 
 $('#reports').addEventListener('click', e => {
-  const li = e.target.closest('.note');
-  if (!li) return;
-  if (e.target.closest('.note-del')) {
-    const r = reports.get(li.dataset.id);
-    if (r && confirm(`Bericht „${displayTitle(r)}“ mit allen Unterpunkten, Fotos und Sprachnotizen löschen?`)) {
-      removeReport(r.id).then(renderList);
-    }
+  const card = e.target.closest('.note');
+  if (!card) return;
+  if (suppressClick) { suppressClick = false; return; } // war Wischen/Ziehen, kein Antippen
+  openReport(card.dataset.id);
+});
+
+/* ---------- Gesten in der Übersicht: gedrückt halten + ziehen = verschieben, wischen = löschen ---------- */
+
+const LONG_PRESS_MS = 450;
+let gesture = null;       // { wrap, card, id, x0, y0, mode: 'pending'|'swipe'|'drag'|'scroll', timer, ... }
+let suppressClick = false;
+
+$('#reports').addEventListener('contextmenu', e => { if (e.target.closest('.note')) e.preventDefault(); });
+
+$('#reports').addEventListener('pointerdown', e => {
+  suppressClick = false; // neue Berührung → ein folgender Klick ist echtes Antippen
+  const card = e.target.closest('.note');
+  if (!card || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  const wrap = card.closest('.note-wrap');
+  gesture = { wrap, card, id: card.dataset.id, x0: e.clientX, y0: e.clientY, mode: 'pending', pid: e.pointerId };
+  gesture.timer = setTimeout(() => startDrag(e.clientY), LONG_PRESS_MS);
+});
+
+function startDrag(y) {
+  if (!gesture || gesture.mode !== 'pending') return;
+  if ($('#search').value.trim()) {
+    toast('Verschieben geht nur ohne Suchbegriff.');
+    gesture.mode = 'scroll';
+    suppressClick = true; // Loslassen soll den Bericht nicht öffnen
     return;
   }
-  openReport(li.dataset.id);
+  gesture.mode = 'drag';
+  const rect = gesture.wrap.getBoundingClientRect();
+  gesture.offset = y - rect.top;
+  gesture.wrap.classList.add('dragging');
+  try { gesture.card.setPointerCapture(gesture.pid); } catch { /* egal */ }
+  if (navigator.vibrate) navigator.vibrate(25);
+}
+
+// Während des Ziehens das Scrollen der Seite verhindern
+$('#reports').addEventListener('touchmove', e => {
+  if (gesture && (gesture.mode === 'drag' || gesture.mode === 'swipe')) e.preventDefault();
+}, { passive: false });
+
+window.addEventListener('pointermove', e => {
+  if (!gesture || e.pointerId !== gesture.pid) return;
+  const dx = e.clientX - gesture.x0;
+  const dy = e.clientY - gesture.y0;
+
+  if (gesture.mode === 'pending') {
+    if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+      clearTimeout(gesture.timer);
+      gesture.mode = 'swipe';
+      gesture.wrap.classList.add('swiping');
+      try { gesture.card.setPointerCapture(gesture.pid); } catch { /* egal */ }
+    } else if (Math.abs(dy) > 10) {
+      clearTimeout(gesture.timer);
+      gesture.mode = 'scroll'; // normales Scrollen
+      return;
+    } else {
+      return;
+    }
+  }
+
+  if (gesture.mode === 'swipe') {
+    gesture.dx = dx;
+    gesture.card.style.transform = `translateX(${dx}px)`;
+    const w = gesture.wrap.offsetWidth;
+    gesture.wrap.querySelector('.swipe-bg').style.opacity = String(Math.min(1, Math.abs(dx) / (w * 0.35)));
+    gesture.wrap.classList.toggle('swipe-left', dx < 0);
+  } else if (gesture.mode === 'drag') {
+    dragMove(e.clientY);
+  }
 });
+
+function dragMove(y) {
+  const wrap = gesture.wrap;
+  const desiredTop = y - gesture.offset;
+  wrap.style.transform = '';
+  let prev = wrap.previousElementSibling;
+  let next = wrap.nextElementSibling;
+  // an Nachbarn vorbei → in der Liste umstellen
+  while (prev && desiredTop < prev.getBoundingClientRect().top + prev.offsetHeight / 2) {
+    wrap.parentNode.insertBefore(wrap, prev);
+    prev = wrap.previousElementSibling;
+  }
+  while (next && desiredTop + wrap.offsetHeight > next.getBoundingClientRect().top + next.offsetHeight / 2) {
+    wrap.parentNode.insertBefore(next, wrap);
+    next = wrap.nextElementSibling;
+  }
+  const natural = wrap.getBoundingClientRect().top;
+  wrap.style.transform = `translateY(${desiredTop - natural}px)`;
+  // am Rand automatisch scrollen
+  if (y < 90) window.scrollBy(0, -12);
+  else if (y > window.innerHeight - 90) window.scrollBy(0, 12);
+}
+
+async function endGesture(e, cancelled) {
+  if (!gesture || (e && e.pointerId !== gesture.pid)) return;
+  const g = gesture;
+  gesture = null;
+  clearTimeout(g.timer);
+
+  if (g.mode === 'swipe') {
+    suppressClick = true;
+    const w = g.wrap.offsetWidth;
+    if (!cancelled && Math.abs(g.dx || 0) > w * 0.33) {
+      g.card.style.transition = 'transform .18s ease-out';
+      g.card.style.transform = `translateX(${(g.dx > 0 ? 1 : -1) * (w + 40)}px)`;
+      g.wrap.style.transition = 'opacity .18s';
+      g.wrap.style.opacity = '0';
+      setTimeout(async () => { await removeReport(g.id); renderList(); }, 180);
+    } else {
+      g.card.style.transition = 'transform .18s ease-out';
+      g.card.style.transform = '';
+      setTimeout(() => { g.card.style.transition = ''; g.wrap.classList.remove('swiping', 'swipe-left'); g.wrap.querySelector('.swipe-bg').style.opacity = ''; }, 200);
+    }
+  } else if (g.mode === 'drag') {
+    suppressClick = true;
+    g.wrap.classList.remove('dragging');
+    g.wrap.style.transform = '';
+    await saveListOrder();
+  }
+}
+window.addEventListener('pointerup', e => endGesture(e, false));
+window.addEventListener('pointercancel', e => {
+  // Browser übernimmt (z. B. Scrollen) – beim Ziehen trotzdem die neue Reihenfolge behalten
+  if (gesture && gesture.mode === 'pending') { clearTimeout(gesture.timer); gesture = null; return; }
+  endGesture(e, true);
+});
+
+/** Reihenfolge aus der Übersicht übernehmen und speichern (ohne „zuletzt geändert“ zu verändern). */
+async function saveListOrder() {
+  const ids = [...document.querySelectorAll('#reports .note-wrap')].map(li => li.dataset.id);
+  const changed = [];
+  ids.forEach((id, i) => {
+    const r = reports.get(id);
+    if (r && r.order !== i) { r.order = i; changed.push(r); }
+  });
+  if (changed.length) {
+    try { await dbPutReports(changed); } catch (err) { toast('Reihenfolge nicht gespeichert: ' + err.message); }
+  }
+}
 
 /** Löscht einen gespeicherten Bericht samt Anhängen und bietet „Rückgängig“ an. */
 async function removeReport(id) {
@@ -607,6 +766,7 @@ async function doSave(force) {
   if (!stored && isEmptyReport(current)) return; // leeren neuen Bericht nicht speichern
   if (!force && !dirty && stored) return;
   dirty = false;
+  if (!stored && !Number.isFinite(current.order)) current.order = topOrder(); // neuer Bericht oben
   await saveReport(current);
   current.updated = reports.get(current.id).updated;
   $('#edit-heading').textContent = 'Bericht';
@@ -1235,7 +1395,7 @@ const actions = {
 /* ---------- Sicherung erstellen ---------- */
 
 async function buildBackup() {
-  const list = [...reports.values()].sort((a, b) => b.date.localeCompare(a.date));
+  const list = [...reports.values()].sort(byOrder);
   const out = [];
   let missing = 0;
   const withData = async atts => {
@@ -1630,6 +1790,7 @@ $('#import-file').addEventListener('change', async e => {
   }
 
   requestPersistence();
+  await ensureOrder();
   renderList();
   const parts = [];
   if (added) parts.push(`${added} neu`);
@@ -1677,6 +1838,7 @@ window.addEventListener('hashchange', e => {
 (async function init() {
   try {
     for (const r of await dbAllReports()) reports.set(r.id, normalize(r));
+    await ensureOrder();
   } catch (err) {
     toast('Speicher nicht verfügbar: ' + err.message);
   }
