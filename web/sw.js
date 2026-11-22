@@ -1,6 +1,6 @@
 // Offline-Unterstützung: App-Dateien werden zwischengespeichert.
 // Bei Änderungen an den Dateien VERSION erhöhen, damit alle Geräte die neue Fassung laden.
-const VERSION = 'berichte-v13';
+const VERSION = 'berichte-v14';
 const FILES = [
   './',
   'index.html',

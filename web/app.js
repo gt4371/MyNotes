@@ -7,7 +7,7 @@
    Die Foto-/Audiodaten selbst liegen getrennt im Store "files" (Schlüssel = Anhang-id).
    ====================================================================== */
 
-const APP_VERSION = '1.13 (22.11.2026)';
+const APP_VERSION = '1.14 (22.11.2026)';
 const DB_NAME = 'notizen';
 let dbPromise = null;
 
@@ -808,9 +808,9 @@ async function openViewer(itemId, fileId) {
   viewer = { itemId, fileId, changed: false };
   const att = viewerAtt();
   $('#viewer-comment').value = (att && att.comment) || '';
-  autogrow($('#viewer-comment'));
   $('#viewer-img').src = (await fileUrl(fileId)) || '';
   $('#viewer').hidden = false;
+  autogrow($('#viewer-comment')); // erst nach dem Einblenden messen, sonst wird das Feld zu flach
   history.pushState({ ...(history.state || {}), viewer: true }, ''); // Zurück-Taste schließt die Ansicht
 }
 

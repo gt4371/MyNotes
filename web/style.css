@@ -331,3 +331,15 @@ mark { background: rgba(255, 179, 0, .4); color: inherit; border-radius: 2px; }
 }
 .viewer-caption textarea::placeholder { color: rgba(255, 255, 255, .7); }
 .viewer-caption textarea:focus { background: rgba(255, 255, 255, .2); border-color: rgba(255, 255, 255, .5); }
+
+/* Vollbild: Kommentarfeld direkt unter dem Foto (nicht am unteren Bildschirmrand) */
+.viewer {
+  flex-direction: column; justify-content: center; gap: 10px;
+  padding: calc(env(safe-area-inset-top) + 64px) 0 calc(env(safe-area-inset-bottom) + 12px);
+}
+.viewer img { max-height: calc(100dvh - 210px); min-height: 0; flex: 0 1 auto; }
+.viewer-caption {
+  position: static; width: 100%; max-width: 760px; flex: none;
+  padding: 0 12px; background: none;
+}
+.viewer-caption textarea { max-height: 25dvh; min-height: 46px; }
